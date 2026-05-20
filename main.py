@@ -1,4 +1,5 @@
 BK1_FILEPATH = "./sample/aginprod.bk1"
+import json 
 
 # This dict holds the mappings for each product number for B01
 file_layout_dict_b01 = {
@@ -35,6 +36,47 @@ file_layout_dict_b01 = {
     "restriction_14_ONTobTax": {"offset": 95, "length": 1},
     "restriction_15_FeedRestr": {"offset": 96, "length": 1},
     "restriction_16_HarmonCtry": {"offset": 97, "length": 1},
+    "restriction_17_MNHBC": {"offset": 98, "length": 1},
+    "restriction_18_ABHBC": {"offset": 99, "length": 1},
+    "restriction_19_NTHBC": {"offset": 100, "length": 1},
+    "restriction_20_CropSupp": {"offset": 101, "length": 1},
+    "restriction_21_MNTobTax": {"offset": 102, "length": 1},
+    "restriction_22_SKTobTax": {"offset": 103, "length": 1},
+    "restriction_23_ABTobTax": {"offset": 104, "length": 1},
+    "restriction_24_NTTobTax": {"offset": 105, "length": 1},
+    "restriction_25_HdwNonMember": {"offset": 106, "length": 1},
+    "restriction_26_ABPest": {"offset": 107, "length": 1},
+    "restriction_27_HdwSeasonal": {"offset": 108, "length": 1},
+    "restriction_28_ArcticCoop": {"offset": 109, "length": 1},
+    "restriction_29_Smittys": {"offset": 110, "length": 1},
+    "restriction_30_PestSched1": {"offset": 111, "length": 1},
+    "restriction_31_PestSched2": {"offset": 112, "length": 1},
+    "restriction_32_PestSched3": {"offset": 113, "length": 1},
+    "restriction_33_NUTobTax": {"offset": 114, "length": 1},
+    "restriction_34_CashCarry": {"offset": 115, "length": 1},
+    "restriction_35_CHA": {"offset": 116, "length": 1},
+    "restriction_36_BCGMRestr": {"offset": 117, "length": 1},
+    "reserved_for_restriction_37": {"offset": 118, "length": 1},
+    "reserved_for_restriction_38": {"offset": 119, "length": 1},
+    "reserved_for_restriction_39": {"offset": 120, "length": 1},
+    "reserved_for_restriction_40": {"offset": 121, "length": 1},
+    "large_bottle_deposite": {"offset": 122, "length": 6},
+    "brand_code": {"offset": 128, "length": 1},
+    "EDBV_item": {"offset": 129, "length": 1},
+    "annual_sales": {"offset": 130, "length": 7},
+    "last_year_annual_sales": {"offset": 137, "length": 7},
+    "layer_quantity": {"offset": 144, "length": 4},
+    "pallet_quantity": {"offset": 148, "length": 4},
+    "minimum_order_quantity": {"offset": 152, "length": 4},
+    "major_department": {"offset": 156, "length": 2},
+    "minor_department": {"offset": 158, "length": 3},
+    "major_category": {"offset": 161, "length": 2},
+    "minor_category": {"offset": 163, "length": 3},
+    "master_item_number": {"offset": 166, "length": 10},
+    "substitute_item_number": {"offset": 176, "length": 10},
+    "quantity_in_warehouse": {"offset": 186, "length": 8},
+    "ecology_code": {"offset": 194, "length": 8},
+    "reclamation_status": {"offset": 202, "length": 1},
 }
 
 
@@ -46,14 +88,45 @@ def product_description(product_line):
 
 def main():
     products = []
-    with open(BK1_FILEPATH, "r") as f:
+    current_product = {}
+    
+    with open(BK1_FILEPATH, "r") as f: 
         for line in f:
-            products.append(line.strip())
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Identify record type (B01, B02, P01)
+            record_type = line[:3]
+            
+            # Start a new product group (Note: Each item gets 3 lines associated with it B01, B02 P01. Thus, if there are 15 items then there'll be 15 x 3 = 45 lines in the file).
+            if record_type == "B01":
+                product_name = line[file_layout_dict_b01["product_description"]["offset"]:file_layout_dict_b01["product_description"]["offset"] + file_layout_dict_b01["product_description"]["length"]].strip()
 
-    product_number(products[0])
-    product_description(products[0])
+                current_product = {
+                    product_name: {
+                        "B01": line,
+                        "B02": None,
+                        "P01": None,
+                    }
+                }
 
+            elif record_type == "B02":
+                if current_product:
+                    # Get the active product name key and inject the B02 line
+                    name = list(current_product.keys())[0]
+                    current_product[name]["B02"] = line
 
+            elif record_type == "P01":
+                if current_product:
+                    # Get the active product name key and inject the P01 line
+                    name = list(current_product.keys())[0]
+                    current_product[name]["P01"] = line
 
+                    # P01 signals the end of the 3-line block, save it to our list
+                    products.append(current_product)
+                    current_product = {}  # Reset for the next product
+                    
+    print(json.dumps(products[0], indent=4))
 
 main()
