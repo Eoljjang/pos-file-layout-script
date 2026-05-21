@@ -80,6 +80,7 @@ file_layout_dict_b01 = {
     "quantity_in_warehouse": {"offset": 186, "length": 8},
     "ecology_code": {"offset": 194, "length": 8},
     "reclamation_status": {"offset": 202, "length": 1},
+    "delete_reason_code": {"offset": 203, "length": 1},
 }
 
 file_layout_dict_b02 = {
