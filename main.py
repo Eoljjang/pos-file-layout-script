@@ -79,6 +79,29 @@ file_layout_dict_b01 = {
     "reclamation_status": {"offset": 202, "length": 1},
 }
 
+file_layout_dict_b02 = {
+    "type": {"offset": 0, "length": 1},
+    "code": {"offset": 1, "length": 2},
+    "product_number": {"offset": 3, "length": 10},
+    "store_vendor_id": {"offset": 13, "length": 10},
+    "group_number": {"offset": 23, "length": 2},
+    "family_number": {"offset": 25, "length": 6},
+    "scan_number": {"offset": 31, "length": 20},
+    "case_upc": {"offset": 51, "length": 20},
+    "store_location": {"offset": 71, "length": 6},
+    "aisle_location": {"offset": 71, "length": 2},
+    "side_location": {"offset": 73, "length": 1},
+    "shelf_location": {"offset": 74, "length": 3},
+    "department_number": {"offset": 77, "length": 2},
+    "alternate_upc_1": {"offset": 79, "length": 20},
+    "alternate_upc_2": {"offset": 99, "length": 20},
+    "alternate_upc_3": {"offset": 119, "length": 20},
+    "alternate_upc_4": {"offset": 139, "length": 20},
+    "alternate_upc_5": {"offset": 159, "length": 20},
+    "fcl_vendor_id": {"offset": 179, "length": 10},
+    "originating_warehouse": {"offset": 189, "length": 1},
+    "gluten_free_code": {"offset": 190, "length": 1},
+}
 
 def product_number(product_line):
     print(product_line[file_layout_dict_b01["product_number"]["offset"]:file_layout_dict_b01["product_number"]["offset"] + file_layout_dict_b01["product_number"]["length"]])
