@@ -103,6 +103,43 @@ file_layout_dict_b02 = {
     "gluten_free_code": {"offset": 190, "length": 1},
 }
 
+file_layout_dict_p01 = {
+    "type": {"offset": 0, "length": 1},
+    "code": {"offset": 1, "length": 2},
+    "product_number": {"offset": 3, "length": 10},
+    "retail_for": {"offset": 13, "length": 2},
+    "retail_price": {"offset": 15, "length": 6},
+    "case_cost":    {"offset": 21, "length": 6},
+    "cube_length": {"offset": 27, "length": 6},
+    "cube_width": {"offset": 33, "length": 6},
+    "cube_height": {"offset": 39, "length": 6},
+    "cube_weight_lbs": {"offset": 45, "length": 6},
+    "shelf_height": {"offset": 51, "length": 6},
+    "shelf_width": {"offset": 57, "length": 6},
+    "shelf_depth": {"offset": 63, "length": 6},
+    "ecology_container_fee_case": {"offset": 69, "length": 4},
+    "sequence_within_family": {"offset": 73, "length": 5},
+    "cost_includes_ecology": {"offset": 78, "length": 1},
+    "estimated_freight": {"offset": 79, "length": 6},
+    "EDBV_adjustment": {"offset": 85, "length": 5}, # In the doc it says "999v99" not sure what the means.
+    "EDBV_adjustment_sign": {"offset": 90, "length": 1},
+    "cost_adjustment": {"offset": 91, "length": 5}, # In the doc it says "999v99" not sure what the means.
+    "cost_adjustment_sign": {"offset": 96, "length": 1},
+    "large_ecology": {"offset": 97, "length": 6},
+    "store_target_margin": {"offset": 103, "length": 6},
+    "SRP_target_margin": {"offset": 109, "length": 6},
+    "SRP_price": {"offset": 115, "length": 6},
+    "tobacco_tax": {"offset": 121, "length": 6},
+    "case_cost_new": {"offset": 127, "length": 6},
+    "SCC_code_1": {"offset": 133, "length": 20},
+    "SCC_code_2": {"offset": 153, "length": 20},
+    "SCC_code_3": {"offset": 173, "length": 20},
+    "SCC_code_4": {"offset": 193, "length": 20},
+    "SCC_code_5": {"offset": 213, "length": 20}
+}
+
+# Note: V01, V02, etc. isn't really used. But if needed I can add it.
+
 def product_number(product_line):
     print(product_line[file_layout_dict_b01["product_number"]["offset"]:file_layout_dict_b01["product_number"]["offset"] + file_layout_dict_b01["product_number"]["length"]])
 
