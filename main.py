@@ -1,5 +1,9 @@
 BK1_FILEPATH = "./sample/aginprod.bk1"
+EXCEL_OUTPUT_PATH = "./output/product_catalog_master.xlsx"
 import json 
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # This dict holds the mappings for each product number for B01
 file_layout_dict_b01 = {
@@ -139,12 +143,162 @@ file_layout_dict_p01 = {
 }
 
 # Note: V01, V02, etc. isn't really used. But if needed I can add it.
+# Example: Getting a specific entry using the dictionary. 
+# ==> print(product_line[file_layout_dict_b01["product_number"]["offset"]:file_layout_dict_b01["product_number"]["offset"] + file_layout_dict_b01["product_number"]["length"]])
 
-def product_number(product_line):
-    print(product_line[file_layout_dict_b01["product_number"]["offset"]:file_layout_dict_b01["product_number"]["offset"] + file_layout_dict_b01["product_number"]["length"]])
+def retrieve_specific_entry(line, layout_dict, entry_name):
+    if entry_name not in layout_dict:
+        raise ValueError(f"Entry name '{entry_name}' not found in layout dictionary.")
+    
+    offset = layout_dict[entry_name]["offset"]
+    length = layout_dict[entry_name]["length"]
+    
+    return line[offset:offset + length].strip()
 
-def product_description(product_line):
-    print(product_line[file_layout_dict_b01["product_description"]["offset"]:file_layout_dict_b01["product_description"]["offset"] + file_layout_dict_b01["product_description"]["length"]])
+def retrieve_all_b01_entries(line):
+    entries = {}
+    for entry_name in file_layout_dict_b01:
+        entries[entry_name] = retrieve_specific_entry(line, file_layout_dict_b01, entry_name)
+    return entries
+
+def retrieve_all_b02_entries(line):
+    entries = {}
+    for entry_name in file_layout_dict_b02:
+        entries[entry_name] = retrieve_specific_entry(line, file_layout_dict_b02, entry_name)
+    return entries
+
+def retrieve_all_p01_entries(line):
+    entries = {}
+    for entry_name in file_layout_dict_p01:
+        entries[entry_name] = retrieve_specific_entry(line, file_layout_dict_p01, entry_name)
+    return entries
+
+def export_to_excel(products, filename):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Product Catalog Master"
+    
+    # Ensure standard gridlines are active
+    ws.views.sheetView[0].showGridLines = True
+    
+    # --- Cohesive Design Palettes (Soft Pastels) ---
+    # Top Merged Header: Dark Slate/Navy for crisp contrast
+    navy_header_fill = PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid")
+    font_main_header = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    
+    # Section 1 (B01): Soft Pastel Blue
+    b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid") # Stronger pastel for header
+    b01_row_fill_a = PatternFill(start_color="F2F8FF", end_color="F2F8FF", fill_type="solid") # Main data row
+    b01_row_fill_b = PatternFill(start_color="E6F2FF", end_color="E6F2FF", fill_type="solid") # Zebra alternative
+    
+    # Section 2 (B02): Soft Pastel Green
+    b02_sub_fill = PatternFill(start_color="E2F0D9", end_color="E2F0D9", fill_type="solid") 
+    b02_row_fill_a = PatternFill(start_color="F4F9F1", end_color="F4F9F1", fill_type="solid") 
+    b02_row_fill_b = PatternFill(start_color="EBF5E6", end_color="EBF5E6", fill_type="solid") 
+    
+    # Section 3 (P01): Soft Pastel Purple/Lavender
+    p01_sub_fill = PatternFill(start_color="E8E1F5", end_color="E8E1F5", fill_type="solid") 
+    p01_row_fill_a = PatternFill(start_color="F6F3FA", end_color="F6F3FA", fill_type="solid") 
+    p01_row_fill_b = PatternFill(start_color="EFEAF6", end_color="EFEAF6", fill_type="solid") 
+
+    # Fonts and Borders
+    font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
+    font_data = Font(name="Segoe UI", size=10, color="222222")
+    thin_border_side = Side(style='thin', color='D9D9D9') # Slightly softer than E0E0E0 for pastels
+    cell_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    
+    # 1. Generate Merged Top-Level Segment Headers
+    segments = [
+        ("Core Item Demographics (B01)", len(file_layout_dict_b01)),
+        ("Logistics & Warehouse Paths (B02)", len(file_layout_dict_b02)),
+        ("Pricing & Financial Metrics (P01)", len(file_layout_dict_p01))
+    ]
+    
+    current_col = 1
+    for name, length in segments:
+        ws.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + length - 1)
+        header_cell = ws.cell(row=1, column=current_col, value=name)
+        header_cell.font = font_main_header
+        header_cell.fill = navy_header_fill
+        header_cell.alignment = Alignment(horizontal="center", vertical="center")
+        current_col += length
+    ws.row_dimensions[1].height = 26
+
+    # 2. Write Lower Field Level Sub-Headers with Pastel Backgrounds
+    all_fields = (
+        list(file_layout_dict_b01.keys()) + 
+        list(file_layout_dict_b02.keys()) + 
+        list(file_layout_dict_p01.keys())
+    )
+    
+    len_b01 = len(file_layout_dict_b01)
+    len_b02 = len(file_layout_dict_b02)
+    
+    for col_idx, field_key in enumerate(all_fields, start=1):
+        clean_title = field_key.replace("_", " ").title()
+        sub_cell = ws.cell(row=2, column=col_idx, value=clean_title)
+        sub_cell.font = font_sub_header
+        sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        sub_cell.border = cell_border
+        
+        # Color code sub-headers based on section boundaries
+        if col_idx <= len_b01:
+            sub_cell.fill = b01_sub_fill
+        elif col_idx <= (len_b01 + len_b02):
+            sub_cell.fill = b02_sub_fill
+        else:
+            sub_cell.fill = p01_sub_fill
+            
+    ws.row_dimensions[2].height = 28
+    
+    # 3. Populate Rows
+    current_row = 3
+    for product in products:
+        prod_key = list(product.keys())[0]
+        data_map = product[prod_key]
+        
+        # Flatten all values sequentially matching column ordering
+        row_values = []
+        for f in file_layout_dict_b01.keys(): row_values.append(data_map["B01_entries"].get(f, ""))
+        for f in file_layout_dict_b02.keys(): row_values.append(data_map["B02_entries"].get(f, ""))
+        for f in file_layout_dict_p01.keys(): row_values.append(data_map["P01_entries"].get(f, ""))
+        
+        # Determine if this row is an alternating row for zebra striping
+        is_zebra_row = (current_row % 2 == 0)
+        
+        # Write values safely and apply section color coding
+        for col_idx, val in enumerate(row_values, start=1):
+            cell = ws.cell(row=current_row, column=col_idx, value=val)
+            cell.font = font_data
+            cell.border = cell_border
+            
+            # Color code data cells + apply pastel zebra striping
+            if col_idx <= len_b01:
+                cell.fill = b01_row_fill_b if is_zebra_row else b01_row_fill_a
+            elif col_idx <= (len_b01 + len_b02):
+                cell.fill = b02_row_fill_b if is_zebra_row else b02_row_fill_a
+            else:
+                cell.fill = p01_row_fill_b if is_zebra_row else p01_row_fill_a
+                
+            # Formatting numbers safely
+            if isinstance(val, float):
+                cell.number_format = "$#,##0.00"
+                cell.alignment = Alignment(horizontal="right")
+            elif isinstance(val, int):
+                cell.alignment = Alignment(horizontal="right")
+                
+        current_row += 1
+        
+    # 4. Sheet Polish: Set Panes and Auto-Width Fit Columns
+    ws.freeze_panes = "D3" # Freezes row 1 & 2 headers, and columns A-C
+    
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
+        
+    wb.save(filename)
+    print(f"Spreadsheet generated successfully: {filename}")
 
 def main():
     products = []
@@ -152,7 +306,7 @@ def main():
     
     with open(BK1_FILEPATH, "r") as f: 
         for line in f:
-            line = line.strip()
+            line = line.rstrip('\n') # Removes only newline chars.
             if not line:
                 continue
             
@@ -186,7 +340,18 @@ def main():
                     # P01 signals the end of the 3-line block, save it to our list
                     products.append(current_product)
                     current_product = {}  # Reset for the next product
-                    
-    print(json.dumps(products[0], indent=4))
+    
+    # For each product, we can now parse the B01, B02, and P01 lines into their respective entries using the layout dictionaries.
+    for product in products:
+        name = list(product.keys())[0]
+        product[name]["B01_entries"] = retrieve_all_b01_entries(product[name]["B01"])
+        product[name]["B02_entries"] = retrieve_all_b02_entries(product[name]["B02"])
+        product[name]["P01_entries"] = retrieve_all_p01_entries(product[name]["P01"]) 
+    
+    # Finally -> Export the products list as excel.
+    export_to_excel(products, EXCEL_OUTPUT_PATH)
+    
+    
+    print(json.dumps(products, indent=4))
 
 main()
