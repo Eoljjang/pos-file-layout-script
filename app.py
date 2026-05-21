@@ -1,10 +1,16 @@
-EXCEL_OUTPUT_PATH = "./output/product_catalog_master.xlsx"
-import json 
+import os
+import json
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# This dict holds the mappings for each product number for B01
+# Tkinter modules for the UI
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+# ==========================================
+# FILE LAYOUT DEFINITIONS (B01, B02, P01)
+# ==========================================
 file_layout_dict_b01 = {
     "type": {"offset": 0, "length": 1},
     "code": {"offset": 1, "length": 2},
@@ -124,9 +130,9 @@ file_layout_dict_p01 = {
     "sequence_within_family": {"offset": 73, "length": 5},
     "cost_includes_ecology": {"offset": 78, "length": 1},
     "estimated_freight": {"offset": 79, "length": 6},
-    "EDBV_adjustment": {"offset": 85, "length": 5}, # In the doc it says "999v99" not sure what the means.
+    "EDBV_adjustment": {"offset": 85, "length": 5},
     "EDBV_adjustment_sign": {"offset": 90, "length": 1},
-    "cost_adjustment": {"offset": 91, "length": 5}, # In the doc it says "999v99" not sure what the means.
+    "cost_adjustment": {"offset": 91, "length": 5},
     "cost_adjustment_sign": {"offset": 96, "length": 1},
     "large_ecology": {"offset": 97, "length": 6},
     "store_target_margin": {"offset": 103, "length": 6},
@@ -141,72 +147,92 @@ file_layout_dict_p01 = {
     "SCC_code_5": {"offset": 213, "length": 20}
 }
 
-# Note: V01, V02, etc. isn't really used. But if needed I can add it.
-# Example: Getting a specific entry using the dictionary. 
-# ==> print(product_line[file_layout_dict_b01["product_number"]["offset"]:file_layout_dict_b01["product_number"]["offset"] + file_layout_dict_b01["product_number"]["length"]])
-
+# ==========================================
+# PARSING ENGINE LOGIC
+# ==========================================
 def retrieve_specific_entry(line, layout_dict, entry_name):
     if entry_name not in layout_dict:
         raise ValueError(f"Entry name '{entry_name}' not found in layout dictionary.")
-    
     offset = layout_dict[entry_name]["offset"]
     length = layout_dict[entry_name]["length"]
+    val = line[offset:offset + length].strip()
     
-    return line[offset:offset + length].strip()
+    # Quick data conversion for clean spreadsheets
+    if val.replace('.', '', 1).isdigit():
+        return float(val) if '.' in val else int(val)
+    return val
 
-def retrieve_all_b01_entries(line):
-    entries = {}
-    for entry_name in file_layout_dict_b01:
-        entries[entry_name] = retrieve_specific_entry(line, file_layout_dict_b01, entry_name)
-    return entries
+def retrieve_all_entries(line, layout_dict):
+    return {entry_name: retrieve_specific_entry(line, layout_dict, entry_name) for entry_name in layout_dict}
 
-def retrieve_all_b02_entries(line):
-    entries = {}
-    for entry_name in file_layout_dict_b02:
-        entries[entry_name] = retrieve_specific_entry(line, file_layout_dict_b02, entry_name)
-    return entries
+def parse_bk1_file(filepath):
+    products = []
+    current_product = {}
+    
+    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.rstrip('\n')
+            if not line:
+                continue
+            
+            record_type = line[:3]
+            if record_type == "B01":
+                offset = file_layout_dict_b01["product_description"]["offset"]
+                length = file_layout_dict_b01["product_description"]["length"]
+                product_name = line[offset:offset + length].strip()
 
-def retrieve_all_p01_entries(line):
-    entries = {}
-    for entry_name in file_layout_dict_p01:
-        entries[entry_name] = retrieve_specific_entry(line, file_layout_dict_p01, entry_name)
-    return entries
+                current_product = {
+                    product_name: {
+                        "B01": line, "B02": None, "P01": None
+                    }
+                }
+            elif record_type == "B02" and current_product:
+                name = list(current_product.keys())[0]
+                current_product[name]["B02"] = line
+            elif record_type == "P01" and current_product:
+                name = list(current_product.keys())[0]
+                current_product[name]["P01"] = line
+                products.append(current_product)
+                current_product = {}
 
+    for product in products:
+        name = list(product.keys())[0]
+        # Use default empty strings if strings are unexpectedly missing from stream block
+        product[name]["B01_entries"] = retrieve_all_entries(product[name]["B01"] or " "*210, file_layout_dict_b01)
+        product[name]["B02_entries"] = retrieve_all_entries(product[name]["B02"] or " "*210, file_layout_dict_b02)
+        product[name]["P01_entries"] = retrieve_all_entries(product[name]["P01"] or " "*240, file_layout_dict_p01)
+        
+    return products
+
+# ==========================================
+# EXCEL EXPORT ENGINE
+# ==========================================
 def export_to_excel(products, filename):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Product Catalog Master"
-    
-    # Ensure standard gridlines are active
     ws.views.sheetView[0].showGridLines = True
     
-    # --- Cohesive Design Palettes (Soft Pastels) ---
-    # Top Merged Header: Dark Slate/Navy for crisp contrast
     navy_header_fill = PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid")
     font_main_header = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
     
-    # Section 1 (B01): Soft Pastel Blue
-    b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid") # Stronger pastel for header
-    b01_row_fill_a = PatternFill(start_color="F2F8FF", end_color="F2F8FF", fill_type="solid") # Main data row
-    b01_row_fill_b = PatternFill(start_color="E6F2FF", end_color="E6F2FF", fill_type="solid") # Zebra alternative
+    b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid")
+    b01_row_fill_a = PatternFill(start_color="F2F8FF", end_color="F2F8FF", fill_type="solid")
+    b01_row_fill_b = PatternFill(start_color="E6F2FF", end_color="E6F2FF", fill_type="solid")
     
-    # Section 2 (B02): Soft Pastel Green
     b02_sub_fill = PatternFill(start_color="E2F0D9", end_color="E2F0D9", fill_type="solid") 
     b02_row_fill_a = PatternFill(start_color="F4F9F1", end_color="F4F9F1", fill_type="solid") 
     b02_row_fill_b = PatternFill(start_color="EBF5E6", end_color="EBF5E6", fill_type="solid") 
     
-    # Section 3 (P01): Soft Pastel Purple/Lavender
     p01_sub_fill = PatternFill(start_color="E8E1F5", end_color="E8E1F5", fill_type="solid") 
     p01_row_fill_a = PatternFill(start_color="F6F3FA", end_color="F6F3FA", fill_type="solid") 
     p01_row_fill_b = PatternFill(start_color="EFEAF6", end_color="EFEAF6", fill_type="solid") 
 
-    # Fonts and Borders
     font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
     font_data = Font(name="Segoe UI", size=10, color="222222")
-    thin_border_side = Side(style='thin', color='D9D9D9') # Slightly softer than E0E0E0 for pastels
+    thin_border_side = Side(style='thin', color='D9D9D9')
     cell_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
     
-    # 1. Generate Merged Top-Level Segment Headers
     segments = [
         ("Core Item Demographics (B01)", len(file_layout_dict_b01)),
         ("Logistics & Warehouse Paths (B02)", len(file_layout_dict_b02)),
@@ -223,13 +249,7 @@ def export_to_excel(products, filename):
         current_col += length
     ws.row_dimensions[1].height = 26
 
-    # 2. Write Lower Field Level Sub-Headers with Pastel Backgrounds
-    all_fields = (
-        list(file_layout_dict_b01.keys()) + 
-        list(file_layout_dict_b02.keys()) + 
-        list(file_layout_dict_p01.keys())
-    )
-    
+    all_fields = list(file_layout_dict_b01.keys()) + list(file_layout_dict_b02.keys()) + list(file_layout_dict_p01.keys())
     len_b01 = len(file_layout_dict_b01)
     len_b02 = len(file_layout_dict_b02)
     
@@ -240,7 +260,6 @@ def export_to_excel(products, filename):
         sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         sub_cell.border = cell_border
         
-        # Color code sub-headers based on section boundaries
         if col_idx <= len_b01:
             sub_cell.fill = b01_sub_fill
         elif col_idx <= (len_b01 + len_b02):
@@ -250,28 +269,23 @@ def export_to_excel(products, filename):
             
     ws.row_dimensions[2].height = 28
     
-    # 3. Populate Rows
     current_row = 3
     for product in products:
         prod_key = list(product.keys())[0]
         data_map = product[prod_key]
         
-        # Flatten all values sequentially matching column ordering
         row_values = []
         for f in file_layout_dict_b01.keys(): row_values.append(data_map["B01_entries"].get(f, ""))
         for f in file_layout_dict_b02.keys(): row_values.append(data_map["B02_entries"].get(f, ""))
         for f in file_layout_dict_p01.keys(): row_values.append(data_map["P01_entries"].get(f, ""))
         
-        # Determine if this row is an alternating row for zebra striping
         is_zebra_row = (current_row % 2 == 0)
         
-        # Write values safely and apply section color coding
         for col_idx, val in enumerate(row_values, start=1):
             cell = ws.cell(row=current_row, column=col_idx, value=val)
             cell.font = font_data
             cell.border = cell_border
             
-            # Color code data cells + apply pastel zebra striping
             if col_idx <= len_b01:
                 cell.fill = b01_row_fill_b if is_zebra_row else b01_row_fill_a
             elif col_idx <= (len_b01 + len_b02):
@@ -279,7 +293,6 @@ def export_to_excel(products, filename):
             else:
                 cell.fill = p01_row_fill_b if is_zebra_row else p01_row_fill_a
                 
-            # Formatting numbers safely
             if isinstance(val, float):
                 cell.number_format = "$#,##0.00"
                 cell.alignment = Alignment(horizontal="right")
@@ -288,82 +301,129 @@ def export_to_excel(products, filename):
                 
         current_row += 1
         
-    # 4. Sheet Polish: Set Panes and Auto-Width Fit Columns
-    ws.freeze_panes = "D3" # Freezes row 1 & 2 headers, and columns A-C
-    
+    ws.freeze_panes = "D3"
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = get_column_letter(col[0].column)
         ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
         
     wb.save(filename)
-    print(f"Spreadsheet generated successfully: {filename}")
 
-def main():
-    products = []
-    current_product = {}
-    
-    while True:
-        BK1_FILEPATH = input("Enter the path to the BK1 file (e.g., ./sample/aginprod.bk1): ").strip()
+# ==========================================
+# CORE UI WINDOW CLASS
+# ==========================================
+class BK1ConverterApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("BK1 Flat-File Parser")
+        self.root.geometry("500x280")
+        self.root.resizable(False, False)
+        
+        self.parsed_data = None
+        self.loaded_filename = ""
 
-        if not BK1_FILEPATH.lower().endswith(".bk1"):
-            print("Error: Please provide a .bk1 file.")
-            continue
+        # Modern UI styling updates
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        # Main wrapper frame
+        main_frame = ttk.Frame(root, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Title Description
+        title_lbl = ttk.Label(main_frame, text="Flat-File Catalog Transpiler", font=("Segoe UI", 14, "bold"))
+        title_lbl.pack(pady=(0, 15))
+
+        # File Select Area
+        file_frame = ttk.Frame(main_frame)
+        file_frame.pack(fill=tk.X, pady=5)
+        
+        self.file_label = ttk.Label(file_frame, text="No .bk1 file loaded.", font=("Segoe UI", 10), wraplength=320)
+        self.file_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        self.upload_btn = ttk.Button(file_frame, text="Browse...", command=self.load_file)
+        self.upload_btn.pack(side=tk.RIGHT, padx=5)
+
+        # Progress Status Ring Indicator (Muted Label text)
+        self.status_lbl = ttk.Label(main_frame, text="Awaiting flat file upload...", font=("Segoe UI", 9, "italic"), foreground="gray")
+        self.status_lbl.pack(pady=15)
+
+        # Save Button (Native Tkinter control used here to easily manipulate custom backgrounds)
+        self.save_btn = tk.Button(
+            main_frame, 
+            text="Save As File Output", 
+            font=("Segoe UI", 11, "bold"),
+            bg="#D6D6D6", 
+            fg="#757575", 
+            state=tk.DISABLED, 
+            relief="flat",
+            command=self.save_file,
+            cursor="arrow"
+        )
+        self.save_btn.pack(fill=tk.X, ipady=8, pady=(10, 0))
+
+    def load_file(self):
+        file_path = filedialog.askopenfilename(
+            title="Select product catalog .bk1 file",
+            filetypes=[("BK1 files", "*.bk1"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return
 
         try:
-            with open(BK1_FILEPATH, "r") as f:
-                break
-        except FileNotFoundError:
-            print(f"Error: File not found at '{BK1_FILEPATH}'. Please check the path and try again.")
-    
-    with open(BK1_FILEPATH, "r") as f: 
-        for line in f:
-            line = line.rstrip('\n') # Removes only newline chars.
-            if not line:
-                continue
+            self.status_lbl.config(text="Processing and validating streams...", foreground="blue")
+            self.root.update_idletasks()
             
-            # Identify record type (B01, B02, P01)
-            record_type = line[:3]
+            # Fire parsing sequence engine
+            self.parsed_data = parse_bk1_file(file_path)
+            self.loaded_filename = os.path.basename(file_path)
             
-            # Start a new product group (Note: Each item gets 3 lines associated with it B01, B02 P01. Thus, if there are 15 items then there'll be 15 x 3 = 45 lines in the file).
-            if record_type == "B01":
-                product_name = line[file_layout_dict_b01["product_description"]["offset"]:file_layout_dict_b01["product_description"]["offset"] + file_layout_dict_b01["product_description"]["length"]].strip()
+            # File loaded successfully state adjustments
+            self.file_label.config(text=f"Loaded: {self.loaded_filename}")
+            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} composite items.", foreground="green")
+            
+            # Shift Save Button to Active Green State
+            self.save_btn.config(
+                state=tk.NORMAL, 
+                bg="#2ECC71", 
+                fg="white", 
+                activebackground="#27AE60", 
+                activeforeground="white",
+                cursor="hand2"
+            )
+        except Exception as e:
+            messagebox.showerror("Parsing Error", f"Failed to extract records from file:\n{str(e)}")
+            self.status_lbl.config(text="Parsing failure.", foreground="red")
 
-                current_product = {
-                    product_name: {
-                        "B01": line,
-                        "B02": None,
-                        "P01": None,
-                    }
-                }
+    def save_file(self):
+        if not self.parsed_data:
+            return
+        
+        # Open directory selection with filters for target options
+        out_path = filedialog.asksaveasfilename(
+            title="Export Transpiled Dataset",
+            initialfile=os.path.splitext(self.loaded_filename)[0],
+            filetypes=[("Excel Spreadsheet", "*.xlsx"), ("JSON Matrix Document", "*.json")]
+        )
+        if not out_path:
+            return
 
-            elif record_type == "B02":
-                if current_product:
-                    # Get the active product name key and inject the B02 line
-                    name = list(current_product.keys())[0]
-                    current_product[name]["B02"] = line
+        try:
+            if out_path.endswith(".json"):
+                with open(out_path, "w", encoding="utf-8") as f:
+                    json.dump(self.parsed_data, f, indent=4)
+            elif out_path.endswith(".xlsx"):
+                export_to_excel(self.parsed_data, out_path)
+            else:
+                # Default safety extension catch
+                out_path += ".xlsx"
+                export_to_excel(self.parsed_data, out_path)
+                
+            messagebox.showinfo("Export Successful", f"File saved cleanly to:\n{os.path.basename(out_path)}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Could not write target document to file location:\n{str(e)}")
 
-            elif record_type == "P01":
-                if current_product:
-                    # Get the active product name key and inject the P01 line
-                    name = list(current_product.keys())[0]
-                    current_product[name]["P01"] = line
-
-                    # P01 signals the end of the 3-line block, save it to our list
-                    products.append(current_product)
-                    current_product = {}  # Reset for the next product
-    
-    # For each product, we can now parse the B01, B02, and P01 lines into their respective entries using the layout dictionaries.
-    for product in products:
-        name = list(product.keys())[0]
-        product[name]["B01_entries"] = retrieve_all_b01_entries(product[name]["B01"])
-        product[name]["B02_entries"] = retrieve_all_b02_entries(product[name]["B02"])
-        product[name]["P01_entries"] = retrieve_all_p01_entries(product[name]["P01"]) 
-    
-    # Finally -> Export the products list as excel.
-    export_to_excel(products, EXCEL_OUTPUT_PATH)
-    
-    
-    print(json.dumps(products, indent=4))
-
-main()
+if __name__ == "__main__":
+    window = tk.Tk()
+    app = BK1ConverterApp(window)
+    window.mainloop()
