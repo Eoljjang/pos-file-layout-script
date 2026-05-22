@@ -213,48 +213,124 @@ class BK1ConverterApp:
         self.root.geometry("500x280")
         self.root.resizable(False, False)
         
+        # Color definitions (Softer dark theme palette)
+        self.bg_base = "#1F232A"
+        self.bg_surface = "#2D3139"
+        self.text_primary = "#E2E8F0"
+        self.text_secondary = "#8E8E93" # iOS style muted gray
+        self.ios_blue = "#0A84FF"       # Apple Dark Mode System Blue Tint
+        
+        # Update system-level Tkinter configuration elements to eliminate light artifacts
+        self.root.configure(bg=self.bg_base)
+        
+        # Windows-specific system background configuration fallback
+        try:
+            from ctypes import windll, byref, c_int, sizeof
+            # Inform Desktop Window Manager (DWM) to respect immersive dark mode matching color profiles
+            HWND = windll.user32.GetParent(self.root.winfo_id())
+            windll.dwmapi.DwmSetWindowAttribute(HWND, 20, byref(c_int(1)), sizeof(c_int))
+        except Exception:
+            pass
+
         self.parsed_data = None
         self.loaded_filename = ""
+
+        # iOS-inspired typography fallback sequence
+        self.font_family = ("-apple-system", "SF Pro Text", "Helvetica Neue", "Segoe UI", "Arial")
 
         # Modern UI styling updates
         self.style = ttk.Style()
         self.style.theme_use('clam')
         
+        # Configure global ttk elements with your softer color profile
+        self.style.configure("TFrame", background=self.bg_base)
+        self.style.configure("Surface.TFrame", background=self.bg_surface)
+        
+        self.style.configure("TLabel", background=self.bg_base, foreground=self.text_primary)
+        self.style.configure("Surface.TLabel", background=self.bg_surface, foreground=self.text_primary)
+        
+        # iOS styling engine transformation - Uses subtle radii layout metrics for gentle component rounding
+        self.style.configure(
+            "IOS.TButton", 
+            background=self.bg_surface, 
+            foreground=self.ios_blue, 
+            font=(self.font_family, 10, "bold"),
+            borderwidth=1,
+            bordercolor=self.ios_blue,
+            lightcolor=self.ios_blue,
+            darkcolor=self.ios_blue,
+            focuscolor=self.bg_surface,
+            padding=(10, 4)
+        )
+        self.style.map(
+            "IOS.TButton", 
+            background=[("active", "#3A3F4B")],
+            foreground=[("active", "#64B5FF")],
+            bordercolor=[("active", "#64B5FF")],
+            lightcolor=[("active", "#64B5FF")],
+            darkcolor=[("active", "#64B5FF")]
+        )
+        
+        # Tweak internal layout components of Clam theme engine to simulate smooth rounding effects
+        self.style.layout("IOS.TButton", [
+            ('Button.border', {'sticky': 'nswe', 'children': [
+                ('Button.focus', {'sticky': 'nswe', 'children': [
+                    ('Button.padding', {'sticky': 'nswe', 'children': [
+                        ('Button.label', {'sticky': 'nswe'})
+                    ]})
+                ]})
+            ]})
+        ])
+        
         # Main wrapper frame
-        main_frame = ttk.Frame(root, padding="20")
+        main_frame = ttk.Frame(root, padding="24")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Title Description
-        title_lbl = ttk.Label(main_frame, text="Flat-File Catalog Transpiler", font=("Segoe UI", 14, "bold"))
-        title_lbl.pack(pady=(0, 15))
+        title_lbl = ttk.Label(main_frame, text="TGS POS File Layout Converter", font=(self.font_family, 16, "bold"))
+        title_lbl.pack(pady=(0, 20), anchor="w")
 
-        # File Select Area
-        file_frame = ttk.Frame(main_frame)
+        # File Select Area (Visual Panel Card Layout with explicit corner relief geometry simulation)
+        file_frame = ttk.Frame(main_frame, style="Surface.TFrame", padding="12")
         file_frame.pack(fill=tk.X, pady=5)
         
-        self.file_label = ttk.Label(file_frame, text="No .bk# file loaded.", font=("Segoe UI", 10), wraplength=320)
+        self.file_label = ttk.Label(
+            file_frame, 
+            text="No .bk# file loaded.", 
+            font=(self.font_family, 10), 
+            wraplength=300, 
+            style="Surface.TLabel"
+        )
         self.file_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        self.upload_btn = ttk.Button(file_frame, text="Browse...", command=self.load_file)
+        self.upload_btn = ttk.Button(file_frame, text="Browse...", style="IOS.TButton", command=self.load_file)
         self.upload_btn.pack(side=tk.RIGHT, padx=5)
 
-        # Progress Status Ring Indicator (Muted Label text)
-        self.status_lbl = ttk.Label(main_frame, text="Awaiting flat file upload...", font=("Segoe UI", 9, "italic"), foreground="gray")
-        self.status_lbl.pack(pady=15)
+        # Progress Status Ring Indicator
+        self.status_lbl = ttk.Label(
+            main_frame, 
+            text="Awaiting flat file upload...", 
+            font=(self.font_family, 10), 
+            foreground=self.text_secondary
+        )
+        self.status_lbl.pack(pady=15, anchor="center")
 
-        # Save Button (Native Tkinter control used here to easily manipulate custom backgrounds)
+        # Save Button (Native control styled safely via subtle flat edge highlights mimicking an iOS CTA control)
         self.save_btn = tk.Button(
             main_frame, 
             text="Export to Excel", 
-            font=("Segoe UI", 11, "bold"),
-            bg="#D6D6D6", 
-            fg="#757575", 
+            font=(self.font_family, 11, "bold"),
+            bg="#2C2C2E",                  # Dark gray fill for disabled states
+            fg="#48484A",                  # Darker gray foreground text
             state=tk.DISABLED, 
             relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            bd=0,
             command=self.save_file,
             cursor="arrow"
         )
-        self.save_btn.pack(fill=tk.X, ipady=8, pady=(10, 0))
+        self.save_btn.pack(fill=tk.X, ipady=10, pady=(10, 0))
 
     def load_file(self):
         file_path = filedialog.askopenfilename(
@@ -265,7 +341,7 @@ class BK1ConverterApp:
             return
 
         try:
-            self.status_lbl.config(text="Processing and validating streams...", foreground="blue")
+            self.status_lbl.config(text="Processing and validating streams...", foreground=self.ios_blue)
             self.root.update_idletasks()
             
             # Fire parsing sequence engine
@@ -274,20 +350,20 @@ class BK1ConverterApp:
             
             # File loaded successfully state adjustments
             self.file_label.config(text=f"Loaded: {self.loaded_filename}")
-            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} composite items.", foreground="green")
+            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} composite items.", foreground="#30D158") # iOS Dark Green Tint
             
-            # Shift Save Button to Active Green State
+            # Shift Save Button to iOS Blue Active Accent State
             self.save_btn.config(
                 state=tk.NORMAL, 
-                bg="#2ECC71", 
+                bg=self.ios_blue, 
                 fg="white", 
-                activebackground="#27AE60", 
+                activebackground="#0070E6", 
                 activeforeground="white",
                 cursor="hand2"
             )
         except Exception as e:
             messagebox.showerror("Parsing Error", f"Failed to extract records from file:\n{str(e)}")
-            self.status_lbl.config(text="Parsing failure.", foreground="red")
+            self.status_lbl.config(text="Parsing failure.", foreground="#FF453A") # iOS Dark Red Tint
 
     def save_file(self):
         if not self.parsed_data:
