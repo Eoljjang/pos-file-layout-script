@@ -34,7 +34,6 @@ def load_layout_configs():
 try:
     file_layout_dict_b01, file_layout_dict_b02, file_layout_dict_p01 = load_layout_configs()
 except Exception as err:
-    # Fail-fast safeguard window prior to standard Tk initialization loop execution context
     root_err = tk.Tk()
     root_err.withdraw()
     messagebox.showerror("Initialization Error", str(err))
@@ -51,7 +50,6 @@ def retrieve_specific_entry(line, layout_dict, entry_name):
     length = layout_dict[entry_name]["length"]
     val = line[offset:offset + length].strip()
     
-    # Quick data conversion for clean spreadsheets
     if val.replace('.', '', 1).isdigit():
         return float(val) if '.' in val else int(val)
     return val
@@ -91,7 +89,6 @@ def parse_bk_file(filepath):
 
     for product in products:
         name = list(product.keys())[0]
-        # Use default empty strings if strings are unexpectedly missing from stream block
         product[name]["B01_entries"] = retrieve_all_entries(product[name]["B01"] or " "*210, file_layout_dict_b01)
         product[name]["B02_entries"] = retrieve_all_entries(product[name]["B02"] or " "*210, file_layout_dict_b02)
         product[name]["P01_entries"] = retrieve_all_entries(product[name]["P01"] or " "*240, file_layout_dict_p01)
@@ -99,7 +96,7 @@ def parse_bk_file(filepath):
     return products
 
 # ==========================================
-# EXCEL EXPORT ENGINE
+# EXCEL EXPORT ENGINE (VERTICAL APPEND)
 # ==========================================
 def export_to_excel(products, filename):
     wb = openpyxl.Workbook()
@@ -107,8 +104,11 @@ def export_to_excel(products, filename):
     ws.title = "Product Catalog Master"
     ws.views.sheetView[0].showGridLines = True
     
+    font_section_header = Font(name="Segoe UI", size=12, bold=True, color="FFFFFF")
+    font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
+    font_data = Font(name="Segoe UI", size=10, color="222222")
+    
     navy_header_fill = PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid")
-    font_main_header = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
     
     b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid")
     b01_row_fill_a = PatternFill(start_color="F2F8FF", end_color="F2F8FF", fill_type="solid")
@@ -122,84 +122,79 @@ def export_to_excel(products, filename):
     p01_row_fill_a = PatternFill(start_color="F6F3FA", end_color="F6F3FA", fill_type="solid") 
     p01_row_fill_b = PatternFill(start_color="EFEAF6", end_color="EFEAF6", fill_type="solid") 
 
-    font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
-    font_data = Font(name="Segoe UI", size=10, color="222222")
     thin_border_side = Side(style='thin', color='D9D9D9')
     cell_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
     
-    segments = [
-        ("Core Item Demographics (B01)", len(file_layout_dict_b01)),
-        ("Logistics & Warehouse Paths (B02)", len(file_layout_dict_b02)),
-        ("Pricing & Financial Metrics (P01)", len(file_layout_dict_p01))
+    segments_config = [
+        {"name": "Core Item Demographics (B01)", "layout": file_layout_dict_b01, "sub_fill": b01_sub_fill, "fill_a": b01_row_fill_a, "fill_b": b01_row_fill_b, "entry_key": "B01_entries"},
+        {"name": "Logistics & Warehouse Paths (B02)", "layout": file_layout_dict_b02, "sub_fill": b02_sub_fill, "fill_a": b02_row_fill_a, "fill_b": b02_row_fill_b, "entry_key": "B02_entries"},
+        {"name": "Pricing & Financial Metrics (P01)", "layout": file_layout_dict_p01, "sub_fill": p01_sub_fill, "fill_a": p01_row_fill_a, "fill_b": p01_row_fill_b, "entry_key": "P01_entries"}
     ]
     
-    current_col = 1
-    for name, length in segments:
-        ws.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + length - 1)
-        header_cell = ws.cell(row=1, column=current_col, value=name)
-        header_cell.font = font_main_header
+    current_row = 1
+    
+    for segment in segments_config:
+        layout_dict = segment["layout"]
+        fields = list(layout_dict.keys())
+        num_fields = len(fields)
+        
+        if num_fields == 0:
+            continue
+            
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_fields)
+        header_cell = ws.cell(row=current_row, column=1, value=segment["name"])
+        header_cell.font = font_section_header
         header_cell.fill = navy_header_fill
-        header_cell.alignment = Alignment(horizontal="center", vertical="center")
-        current_col += length
-    ws.row_dimensions[1].height = 26
-
-    all_fields = list(file_layout_dict_b01.keys()) + list(file_layout_dict_b02.keys()) + list(file_layout_dict_p01.keys())
-    len_b01 = len(file_layout_dict_b01)
-    len_b02 = len(file_layout_dict_b02)
-    
-    for col_idx, field_key in enumerate(all_fields, start=1):
-        clean_title = field_key.replace("_", " ").title()
-        sub_cell = ws.cell(row=2, column=col_idx, value=clean_title)
-        sub_cell.font = font_sub_header
-        sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        sub_cell.border = cell_border
-        
-        if col_idx <= len_b01:
-            sub_cell.fill = b01_sub_fill
-        elif col_idx <= (len_b01 + len_b02):
-            sub_cell.fill = b02_sub_fill
-        else:
-            sub_cell.fill = p01_sub_fill
-            
-    ws.row_dimensions[2].height = 28
-    
-    current_row = 3
-    for product in products:
-        prod_key = list(product.keys())[0]
-        data_map = product[prod_key]
-        
-        row_values = []
-        for f in file_layout_dict_b01.keys(): row_values.append(data_map["B01_entries"].get(f, ""))
-        for f in file_layout_dict_b02.keys(): row_values.append(data_map["B02_entries"].get(f, ""))
-        for f in file_layout_dict_p01.keys(): row_values.append(data_map["P01_entries"].get(f, ""))
-        
-        is_zebra_row = (current_row % 2 == 0)
-        
-        for col_idx, val in enumerate(row_values, start=1):
-            cell = ws.cell(row=current_row, column=col_idx, value=val)
-            cell.font = font_data
-            cell.border = cell_border
-            
-            if col_idx <= len_b01:
-                cell.fill = b01_row_fill_b if is_zebra_row else b01_row_fill_a
-            elif col_idx <= (len_b01 + len_b02):
-                cell.fill = b02_row_fill_b if is_zebra_row else b02_row_fill_a
-            else:
-                cell.fill = p01_row_fill_b if is_zebra_row else p01_row_fill_a
-                
-            if isinstance(val, float):
-                cell.number_format = "$#,##0.00"
-                cell.alignment = Alignment(horizontal="right")
-            elif isinstance(val, int):
-                cell.alignment = Alignment(horizontal="right")
-                
+        header_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws.row_dimensions[current_row].height = 30
         current_row += 1
         
-    ws.freeze_panes = "D3"
+        for col_idx, field_key in enumerate(fields, start=1):
+            clean_title = field_key.replace("_", " ").title()
+            sub_cell = ws.cell(row=current_row, column=col_idx, value=clean_title)
+            sub_cell.font = font_sub_header
+            sub_cell.fill = segment["sub_fill"]
+            sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            sub_cell.border = cell_border
+            
+        ws.row_dimensions[current_row].height = 26
+        current_row += 1
+        
+        for idx, product in enumerate(products):
+            prod_key = list(product.keys())[0]
+            data_map = product[prod_key]
+            
+            is_zebra_row = (idx % 2 == 0)
+            current_fill = segment["fill_b"] if is_zebra_row else segment["fill_a"]
+            
+            for col_idx, field_key in enumerate(fields, start=1):
+                val = data_map[segment["entry_key"]].get(field_key, "")
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.font = font_data
+                cell.fill = current_fill
+                cell.border = cell_border
+                
+                if isinstance(val, float):
+                    cell.number_format = "$#,##0.00"
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                elif isinstance(val, int):
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    
+            ws.row_dimensions[current_row].height = 20
+            current_row += 1
+            
+        current_row += 2 
+
+    ws.freeze_panes = "A3" 
     for col in ws.columns:
-        max_len = max(len(str(cell.value or '')) for cell in col)
+        max_len = 0
+        for cell in col:
+            if cell.value and "Section" not in str(cell.value) and len(str(cell.value)) > max_len:
+                max_len = len(str(cell.value))
         col_letter = get_column_letter(col[0].column)
-        ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
         
     wb.save(filename)
 
@@ -213,20 +208,19 @@ class BK1ConverterApp:
         self.root.geometry("500x280")
         self.root.resizable(False, False)
         
-        # Color definitions (Softer dark theme palette)
+        # Color definitions
         self.bg_base = "#1F232A"
         self.bg_surface = "#2D3139"
         self.text_primary = "#E2E8F0"
-        self.text_secondary = "#8E8E93" # iOS style muted gray
-        self.ios_blue = "#0A84FF"       # Apple Dark Mode System Blue Tint
+        self.text_secondary = "#8E8E93" 
+        self.ios_blue = "#0A84FF"       
+        self.ios_green = "#30D158"      
+        self.ios_red = "#FF453A"        
         
-        # Update system-level Tkinter configuration elements to eliminate light artifacts
         self.root.configure(bg=self.bg_base)
         
-        # Windows-specific system background configuration fallback
         try:
             from ctypes import windll, byref, c_int, sizeof
-            # Inform Desktop Window Manager (DWM) to respect immersive dark mode matching color profiles
             HWND = windll.user32.GetParent(self.root.winfo_id())
             windll.dwmapi.DwmSetWindowAttribute(HWND, 20, byref(c_int(1)), sizeof(c_int))
         except Exception:
@@ -234,22 +228,16 @@ class BK1ConverterApp:
 
         self.parsed_data = None
         self.loaded_filename = ""
-
-        # iOS-inspired typography fallback sequence
         self.font_family = ("-apple-system", "SF Pro Text", "Helvetica Neue", "Segoe UI", "Arial")
 
-        # Modern UI styling updates
         self.style = ttk.Style()
         self.style.theme_use('clam')
         
-        # Configure global ttk elements with your softer color profile
         self.style.configure("TFrame", background=self.bg_base)
         self.style.configure("Surface.TFrame", background=self.bg_surface)
-        
         self.style.configure("TLabel", background=self.bg_base, foreground=self.text_primary)
         self.style.configure("Surface.TLabel", background=self.bg_surface, foreground=self.text_primary)
         
-        # iOS styling engine transformation - Uses subtle radii layout metrics for gentle component rounding
         self.style.configure(
             "IOS.TButton", 
             background=self.bg_surface, 
@@ -271,7 +259,6 @@ class BK1ConverterApp:
             darkcolor=[("active", "#64B5FF")]
         )
         
-        # Tweak internal layout components of Clam theme engine to simulate smooth rounding effects
         self.style.layout("IOS.TButton", [
             ('Button.border', {'sticky': 'nswe', 'children': [
                 ('Button.focus', {'sticky': 'nswe', 'children': [
@@ -282,15 +269,12 @@ class BK1ConverterApp:
             ]})
         ])
         
-        # Main wrapper frame
         main_frame = ttk.Frame(root, padding="24")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Title Description
         title_lbl = ttk.Label(main_frame, text="TGS POS File Layout Converter", font=(self.font_family, 16, "bold"))
         title_lbl.pack(pady=(0, 20), anchor="w")
 
-        # File Select Area (Visual Panel Card Layout with explicit corner relief geometry simulation)
         file_frame = ttk.Frame(main_frame, style="Surface.TFrame", padding="12")
         file_frame.pack(fill=tk.X, pady=5)
         
@@ -306,22 +290,23 @@ class BK1ConverterApp:
         self.upload_btn = ttk.Button(file_frame, text="Browse...", style="IOS.TButton", command=self.load_file)
         self.upload_btn.pack(side=tk.RIGHT, padx=5)
 
-        # Progress Status Ring Indicator
+        # Multi-use Dynamic Status Label Configuration
         self.status_lbl = ttk.Label(
             main_frame, 
             text="Awaiting flat file upload...", 
             font=(self.font_family, 10), 
-            foreground=self.text_secondary
+            foreground=self.text_secondary,
+            wraplength=440,
+            justify="center"
         )
         self.status_lbl.pack(pady=15, anchor="center")
 
-        # Save Button (Native control styled safely via subtle flat edge highlights mimicking an iOS CTA control)
         self.save_btn = tk.Button(
             main_frame, 
             text="Export to Excel", 
             font=(self.font_family, 11, "bold"),
-            bg="#2C2C2E",                  # Dark gray fill for disabled states
-            fg="#48484A",                  # Darker gray foreground text
+            bg="#2C2C2E", 
+            fg="#48484A", 
             state=tk.DISABLED, 
             relief="flat",
             borderwidth=0,
@@ -344,15 +329,12 @@ class BK1ConverterApp:
             self.status_lbl.config(text="Processing and validating streams...", foreground=self.ios_blue)
             self.root.update_idletasks()
             
-            # Fire parsing sequence engine
             self.parsed_data = parse_bk_file(file_path)
             self.loaded_filename = os.path.basename(file_path)
             
-            # File loaded successfully state adjustments
             self.file_label.config(text=f"Loaded: {self.loaded_filename}")
-            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} composite items.", foreground="#30D158") # iOS Dark Green Tint
+            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} composite items.", foreground=self.ios_green) 
             
-            # Shift Save Button to iOS Blue Active Accent State
             self.save_btn.config(
                 state=tk.NORMAL, 
                 bg=self.ios_blue, 
@@ -362,14 +344,12 @@ class BK1ConverterApp:
                 cursor="hand2"
             )
         except Exception as e:
-            messagebox.showerror("Parsing Error", f"Failed to extract records from file:\n{str(e)}")
-            self.status_lbl.config(text="Parsing failure.", foreground="#FF453A") # iOS Dark Red Tint
+            self.status_lbl.config(text=f"Parsing failure: {str(e)}", foreground=self.ios_red) 
 
     def save_file(self):
         if not self.parsed_data:
             return
         
-        # Open directory selection with filters for target options
         out_path = filedialog.asksaveasfilename(
             title="Export Transpiled Dataset",
             initialfile=os.path.splitext(self.loaded_filename)[0],
@@ -379,19 +359,32 @@ class BK1ConverterApp:
             return
 
         try:
+            self.status_lbl.config(text="Writing data layers to file destination...", foreground=self.ios_blue)
+            self.root.update_idletasks()
+
             if out_path.endswith(".json"):
                 with open(out_path, "w", encoding="utf-8") as f:
                     json.dump(self.parsed_data, f, indent=4)
-            elif out_path.endswith(".xlsx"):
-                export_to_excel(self.parsed_data, out_path)
             else:
-                # Default safety extension catch
-                out_path += ".xlsx"
+                if not out_path.endswith(".xlsx"):
+                    out_path += ".xlsx"
                 export_to_excel(self.parsed_data, out_path)
                 
-            messagebox.showinfo("Export Successful", f"File saved cleanly to:\n{os.path.basename(out_path)}")
+            # Direct In-App Success Status Placement
+            self.status_lbl.config(
+                text=f"Excel file saved successfully to: {os.path.basename(out_path)}", 
+                foreground=self.ios_green
+            )
         except Exception as e:
-            messagebox.showerror("Export Error", f"Could not write target document to file location:\n{str(e)}")
+            # Inline Error Delivery Optimization Context
+            error_msg = str(e)
+            if "Permission denied" in error_msg:
+                error_msg = "Permission Denied. Close the file if it's open in Excel and retry."
+            
+            self.status_lbl.config(
+                text=f"Export failed: {error_msg}", 
+                foreground=self.ios_red
+            )
 
 if __name__ == "__main__":
     window = tk.Tk()
