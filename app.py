@@ -96,18 +96,20 @@ def parse_bk_file(filepath):
     return products
 
 # ==========================================
-# EXCEL EXPORT ENGINE (VERTICAL APPEND)
+# Export to Excel logic
 # ==========================================
 def export_to_excel(products, filename):
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Product Catalog Master"
+    ws.title = "TGP POS Translations"
     ws.views.sheetView[0].showGridLines = True
     
+    # Fonts
     font_section_header = Font(name="Segoe UI", size=12, bold=True, color="FFFFFF")
     font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
     font_data = Font(name="Segoe UI", size=10, color="222222")
     
+    # Fills
     navy_header_fill = PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid")
     
     b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid")
@@ -126,50 +128,74 @@ def export_to_excel(products, filename):
     cell_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
     
     segments_config = [
-        {"name": "Core Item Demographics (B01)", "layout": file_layout_dict_b01, "sub_fill": b01_sub_fill, "fill_a": b01_row_fill_a, "fill_b": b01_row_fill_b, "entry_key": "B01_entries"},
-        {"name": "Logistics & Warehouse Paths (B02)", "layout": file_layout_dict_b02, "sub_fill": b02_sub_fill, "fill_a": b02_row_fill_a, "fill_b": b02_row_fill_b, "entry_key": "B02_entries"},
-        {"name": "Pricing & Financial Metrics (P01)", "layout": file_layout_dict_p01, "sub_fill": p01_sub_fill, "fill_a": p01_row_fill_a, "fill_b": p01_row_fill_b, "entry_key": "P01_entries"}
+        {"name": "B01", "layout": file_layout_dict_b01, "sub_fill": b01_sub_fill, "fill_a": b01_row_fill_a, "fill_b": b01_row_fill_b, "entry_key": "B01_entries"},
+        {"name": "B02", "layout": file_layout_dict_b02, "sub_fill": b02_sub_fill, "fill_a": b02_row_fill_a, "fill_b": b02_row_fill_b, "entry_key": "B02_entries"},
+        {"name": "P01", "layout": file_layout_dict_p01, "sub_fill": p01_sub_fill, "fill_a": p01_row_fill_a, "fill_b": p01_row_fill_b, "entry_key": "P01_entries"}
     ]
     
-    current_row = 1
+    # ----------------------------------------------------
+    # STEP 1: BUILD HORIZONTAL HEADERS (ROWS 1 & 2)
+    # ----------------------------------------------------
+    current_col = 1
     
     for segment in segments_config:
-        layout_dict = segment["layout"]
-        fields = list(layout_dict.keys())
+        fields = list(segment["layout"].keys())
         num_fields = len(fields)
         
         if num_fields == 0:
             continue
             
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_fields)
-        header_cell = ws.cell(row=current_row, column=1, value=segment["name"])
+        # Merge section header across its specific layout width horizontally
+        start_col = current_col
+        end_col = current_col + num_fields - 1
+        
+        ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
+        header_cell = ws.cell(row=1, column=start_col, value=segment["name"])
         header_cell.font = font_section_header
         header_cell.fill = navy_header_fill
         header_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-        ws.row_dimensions[current_row].height = 30
-        current_row += 1
         
-        for col_idx, field_key in enumerate(fields, start=1):
+        # Write sub-headers directly beneath the main section header
+        for field_idx, field_key in enumerate(fields):
+            col_pos = start_col + field_idx
             clean_title = field_key.replace("_", " ").title()
-            sub_cell = ws.cell(row=current_row, column=col_idx, value=clean_title)
+            
+            sub_cell = ws.cell(row=2, column=col_pos, value=clean_title)
             sub_cell.font = font_sub_header
             sub_cell.fill = segment["sub_fill"]
             sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
             sub_cell.border = cell_border
             
-        ws.row_dimensions[current_row].height = 26
-        current_row += 1
+        current_col = end_col + 1  # Shift right for the next segment
+
+    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[2].height = 26
+    
+    # ----------------------------------------------------
+    # STEP 2: WRITE DATA ROWS
+    # ----------------------------------------------------
+    for idx, product in enumerate(products):
+        current_row = idx + 3  # Data starts at row 3
+        prod_key = list(product.keys())[0]
+        data_map = product[prod_key]
         
-        for idx, product in enumerate(products):
-            prod_key = list(product.keys())[0]
-            data_map = product[prod_key]
-            
-            is_zebra_row = (idx % 2 == 0)
+        is_zebra_row = (idx % 2 == 0)
+        
+        # Track column positions dynamically across segments
+        segment_col_start = 1
+        
+        for segment in segments_config:
+            fields = list(segment["layout"].keys())
+            if not fields:
+                continue
+                
             current_fill = segment["fill_b"] if is_zebra_row else segment["fill_a"]
             
-            for col_idx, field_key in enumerate(fields, start=1):
+            for field_idx, field_key in enumerate(fields):
+                col_pos = segment_col_start + field_idx
                 val = data_map[segment["entry_key"]].get(field_key, "")
-                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                
+                cell = ws.cell(row=current_row, column=col_pos, value=val)
                 cell.font = font_data
                 cell.fill = current_fill
                 cell.border = cell_border
@@ -182,22 +208,27 @@ def export_to_excel(products, filename):
                 else:
                     cell.alignment = Alignment(horizontal="left", vertical="center")
                     
-            ws.row_dimensions[current_row].height = 20
-            current_row += 1
+            segment_col_start += len(fields) # Move starting column to next segment group
             
-        current_row += 2 
+        ws.row_dimensions[current_row].height = 20
 
+    # Freeze panes below headers
     ws.freeze_panes = "A3" 
+    
+    # Auto-fit columns dynamically
     for col in ws.columns:
         max_len = 0
         for cell in col:
-            if cell.value and "Section" not in str(cell.value) and len(str(cell.value)) > max_len:
+            # Avoid using merged section titles for width tracking
+            if cell.row == 1:
+                continue
+            if cell.value and len(str(cell.value)) > max_len:
                 max_len = len(str(cell.value))
         col_letter = get_column_letter(col[0].column)
         ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
         
     wb.save(filename)
-
+    
 # ==========================================
 # CORE UI WINDOW CLASS
 # ==========================================
@@ -280,7 +311,7 @@ class BK1ConverterApp:
         
         self.file_label = ttk.Label(
             file_frame, 
-            text="No .bk# file loaded.", 
+            text="No .bk file loaded.", 
             font=(self.font_family, 10), 
             wraplength=300, 
             style="Surface.TLabel"
@@ -293,7 +324,7 @@ class BK1ConverterApp:
         # Multi-use Dynamic Status Label Configuration
         self.status_lbl = ttk.Label(
             main_frame, 
-            text="Awaiting flat file upload...", 
+            text="Waiting for .bk file...", 
             font=(self.font_family, 10), 
             foreground=self.text_secondary,
             wraplength=440,
@@ -326,14 +357,14 @@ class BK1ConverterApp:
             return
 
         try:
-            self.status_lbl.config(text="Processing and validating streams...", foreground=self.ios_blue)
+            self.status_lbl.config(text="Processing .bk file (might take a moment if large)...", foreground=self.ios_blue)
             self.root.update_idletasks()
             
             self.parsed_data = parse_bk_file(file_path)
             self.loaded_filename = os.path.basename(file_path)
             
             self.file_label.config(text=f"Loaded: {self.loaded_filename}")
-            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} composite items.", foreground=self.ios_green) 
+            self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} POS items.", foreground=self.ios_green) 
             
             self.save_btn.config(
                 state=tk.NORMAL, 
@@ -359,7 +390,7 @@ class BK1ConverterApp:
             return
 
         try:
-            self.status_lbl.config(text="Writing data layers to file destination...", foreground=self.ios_blue)
+            self.status_lbl.config(text="Writing to excel (might take a moment if large)...", foreground=self.ios_blue)
             self.root.update_idletasks()
 
             if out_path.endswith(".json"):
