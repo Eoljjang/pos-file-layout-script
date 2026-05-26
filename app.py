@@ -3,14 +3,32 @@ import json
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+import sys
 
 # Tkinter modules for the UI
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+# ----------------------------------------------------
+# GLOBAL EXPLICIT VARIABLES INITIALIZATION
+# ----------------------------------------------------
+file_layout_dict_b01 = {}
+file_layout_dict_b02 = {}
+file_layout_dict_p01 = {}
+
 # ==========================================
 # CONFIGURATION LOADER ENGINE
 # ==========================================
+def get_resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 def load_layout_configs():
     """Loads parsing schemas from local external JSON configs."""
     configs = {}
@@ -21,12 +39,15 @@ def load_layout_configs():
     }
     
     for key, filename in files.items():
-        if not os.path.exists(filename):
+        # ROUTE THROUGH THE RESOURCE HELPER
+        resolved_path = get_resource_path(filename)
+        
+        if not os.path.exists(resolved_path):
             raise FileNotFoundError(
                 f"Missing critical layout specification schema: '{filename}'.\n"
-                f"Ensure it resides in the application execution path."
+                f"Resolved destination attempted: {resolved_path}"
             )
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(resolved_path, "r", encoding="utf-8") as f:
             configs[key] = json.load(f)
             
     return configs["B01"], configs["B02"], configs["P01"]
@@ -60,7 +81,8 @@ def retrieve_all_entries(line, layout_dict):
 def parse_bk_file(filepath):
     products = []
     current_product = {}
-    
+    current_product_name = None  # Tracks active dictionary keys for performance optimization
+
     with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line = line.rstrip('\n')
@@ -68,24 +90,30 @@ def parse_bk_file(filepath):
                 continue
             
             record_type = line[:3]
+            
             if record_type == "B01":
+                # Commit the previous item in progress before starting a new block
+                if current_product and current_product_name:
+                    products.append(current_product)
+                
                 offset = file_layout_dict_b01["product_description"]["offset"]
                 length = file_layout_dict_b01["product_description"]["length"]
                 product_name = line[offset:offset + length].strip()
 
+                current_product_name = product_name
                 current_product = {
-                    product_name: {
+                    current_product_name: {
                         "B01": line, "B02": None, "P01": None
                     }
                 }
-            elif record_type == "B02" and current_product:
-                name = list(current_product.keys())[0]
-                current_product[name]["B02"] = line
-            elif record_type == "P01" and current_product:
-                name = list(current_product.keys())[0]
-                current_product[name]["P01"] = line
-                products.append(current_product)
-                current_product = {}
+            elif record_type == "B02" and current_product_name:
+                current_product[current_product_name]["B02"] = line
+            elif record_type == "P01" and current_product_name:
+                current_product[current_product_name]["P01"] = line
+
+        # Flush final item remaining in buffer
+        if current_product and current_product_name:
+            products.append(current_product)
 
     for product in products:
         name = list(product.keys())[0]
@@ -145,7 +173,6 @@ def export_to_excel(products, filename):
         if num_fields == 0:
             continue
             
-        # Merge section header across its specific layout width horizontally
         start_col = current_col
         end_col = current_col + num_fields - 1
         
@@ -155,7 +182,6 @@ def export_to_excel(products, filename):
         header_cell.fill = navy_header_fill
         header_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
         
-        # Write sub-headers directly beneath the main section header
         for field_idx, field_key in enumerate(fields):
             col_pos = start_col + field_idx
             clean_title = field_key.replace("_", " ").title()
@@ -166,7 +192,7 @@ def export_to_excel(products, filename):
             sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
             sub_cell.border = cell_border
             
-        current_col = end_col + 1  # Shift right for the next segment
+        current_col = end_col + 1
 
     ws.row_dimensions[1].height = 30
     ws.row_dimensions[2].height = 26
@@ -175,13 +201,11 @@ def export_to_excel(products, filename):
     # STEP 2: WRITE DATA ROWS
     # ----------------------------------------------------
     for idx, product in enumerate(products):
-        current_row = idx + 3  # Data starts at row 3
+        current_row = idx + 3
         prod_key = list(product.keys())[0]
         data_map = product[prod_key]
         
         is_zebra_row = (idx % 2 == 0)
-        
-        # Track column positions dynamically across segments
         segment_col_start = 1
         
         for segment in segments_config:
@@ -208,18 +232,15 @@ def export_to_excel(products, filename):
                 else:
                     cell.alignment = Alignment(horizontal="left", vertical="center")
                     
-            segment_col_start += len(fields) # Move starting column to next segment group
+            segment_col_start += len(fields)
             
         ws.row_dimensions[current_row].height = 20
 
-    # Freeze panes below headers
     ws.freeze_panes = "A3" 
     
-    # Auto-fit columns dynamically
     for col in ws.columns:
         max_len = 0
         for cell in col:
-            # Avoid using merged section titles for width tracking
             if cell.row == 1:
                 continue
             if cell.value and len(str(cell.value)) > max_len:
@@ -239,7 +260,6 @@ class BK1ConverterApp:
         self.root.geometry("500x280")
         self.root.resizable(False, False)
         
-        # Color definitions
         self.bg_base = "#1F232A"
         self.bg_surface = "#2D3139"
         self.text_primary = "#E2E8F0"
@@ -321,7 +341,6 @@ class BK1ConverterApp:
         self.upload_btn = ttk.Button(file_frame, text="Browse...", style="IOS.TButton", command=self.load_file)
         self.upload_btn.pack(side=tk.RIGHT, padx=5)
 
-        # Multi-use Dynamic Status Label Configuration
         self.status_lbl = ttk.Label(
             main_frame, 
             text="Waiting for .bk file...", 
@@ -401,13 +420,11 @@ class BK1ConverterApp:
                     out_path += ".xlsx"
                 export_to_excel(self.parsed_data, out_path)
                 
-            # Direct In-App Success Status Placement
             self.status_lbl.config(
                 text=f"Excel file saved successfully to: {os.path.basename(out_path)}", 
                 foreground=self.ios_green
             )
         except Exception as e:
-            # Inline Error Delivery Optimization Context
             error_msg = str(e)
             if "Permission denied" in error_msg:
                 error_msg = "Permission Denied. Close the file if it's open in Excel and retry."

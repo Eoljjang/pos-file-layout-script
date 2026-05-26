@@ -27,7 +27,7 @@ jobs:
 
     - name: Build Standalone EXE with PyInstaller
       run: |
-        pyinstaller --noconsole --onefile app.py
+        pyinstaller --noconsole --onefile --add-data "configs;configs" app.py
 
     - name: Generate Automatic Release Tag
       id: tag
