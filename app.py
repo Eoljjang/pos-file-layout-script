@@ -370,7 +370,7 @@ class BK1ConverterApp:
     def load_file(self):
         file_path = filedialog.askopenfilename(
             title="Select product catalog file",
-            filetypes=[("BK files", "*.bk1;*.bk2;*.bk3"), ("BK1 files", "*.bk1"), ("BK2 files", "*.bk2"), ("BK3 files", "*.bk3"), ("All files", "*.*")]
+            filetypes=[("BK files", "*.bk*"), ("All files", "*.*")]
         )
         if not file_path:
             return
