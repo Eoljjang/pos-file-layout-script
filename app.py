@@ -372,7 +372,12 @@ class BK1ConverterApp:
             title="Select product catalog file",
             filetypes=[("BK files", "*.bk*"), ("All files", "*.*")]
         )
+        
         if not file_path:
+            return
+
+        if not os.path.splitext(os.path.basename(file_path).lower())[1].startswith(".bk"):
+            self.status_lbl.config(text="Uploaded file was not a .bk# file", foreground=self.ios_red)
             return
 
         try:
