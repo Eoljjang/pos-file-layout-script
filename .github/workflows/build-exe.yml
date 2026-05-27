@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: windows-latest  # Must run on Windows to generate a Windows .exe
+    
+    # CRITICAL: Gives the GITHUB_TOKEN permission to create Releases and upload files
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout Repository Code
@@ -19,15 +23,24 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip' # Automatically caches dependencies to speed up future runs
 
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install openpyxl pyinstaller
+        pip install openpyxl pyinstaller tkinterdnd2
 
     - name: Build Standalone EXE with PyInstaller
+      shell: bash
       run: |
-        pyinstaller --noconsole --onefile --add-data "configs;configs" --name "TGP POS Converter" app.py
+        # Locate where pip installed tkinterdnd2 dynamically in the runner environment
+        TKDND_PATH=$(python -c "import tkinterdnd2; import os; print(os.path.dirname(tkinterdnd2.__file__))")
+        
+        # Build the EXE including both your local configs directory AND the tkinterdnd2 internal assets
+        pyinstaller --noconsole --onefile \
+          --add-data "configs;configs" \
+          --add-data "$TKDND_PATH;tkinterdnd2" \
+          --name "TGP POS Converter" app.py
 
     - name: Generate Automatic Release Tag
       id: tag

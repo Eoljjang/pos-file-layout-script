@@ -9,6 +9,12 @@ import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+# Third-party module for native drag and drop capabilities
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+except ImportError:
+    pass
+
 # ----------------------------------------------------
 # GLOBAL EXPLICIT VARIABLES INITIALIZATION
 # ----------------------------------------------------
@@ -22,11 +28,9 @@ file_layout_dict_p01 = {}
 def get_resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except AttributeError:
         base_path = os.path.abspath(".")
-
     return os.path.join(base_path, relative_path)
 
 def load_layout_configs():
@@ -39,9 +43,7 @@ def load_layout_configs():
     }
     
     for key, filename in files.items():
-        # ROUTE THROUGH THE RESOURCE HELPER
         resolved_path = get_resource_path(filename)
-        
         if not os.path.exists(resolved_path):
             raise FileNotFoundError(
                 f"Missing critical layout specification schema: '{filename}'.\n"
@@ -81,7 +83,7 @@ def retrieve_all_entries(line, layout_dict):
 def parse_bk_file(filepath):
     products = []
     current_product = {}
-    current_product_name = None  # Tracks active dictionary keys for performance optimization
+    current_product_name = None
 
     with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
@@ -92,7 +94,6 @@ def parse_bk_file(filepath):
             record_type = line[:3]
             
             if record_type == "B01":
-                # Commit the previous item in progress before starting a new block
                 if current_product and current_product_name:
                     products.append(current_product)
                 
@@ -111,7 +112,6 @@ def parse_bk_file(filepath):
             elif record_type == "P01" and current_product_name:
                 current_product[current_product_name]["P01"] = line
 
-        # Flush final item remaining in buffer
         if current_product and current_product_name:
             products.append(current_product)
 
@@ -132,14 +132,11 @@ def export_to_excel(products, filename):
     ws.title = "TGP POS Translations"
     ws.views.sheetView[0].showGridLines = True
     
-    # Fonts
     font_section_header = Font(name="Segoe UI", size=12, bold=True, color="FFFFFF")
     font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
     font_data = Font(name="Segoe UI", size=10, color="222222")
     
-    # Fills
     navy_header_fill = PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid")
-    
     b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid")
     b01_row_fill_a = PatternFill(start_color="F2F8FF", end_color="F2F8FF", fill_type="solid")
     b01_row_fill_b = PatternFill(start_color="E6F2FF", end_color="E6F2FF", fill_type="solid")
@@ -161,15 +158,10 @@ def export_to_excel(products, filename):
         {"name": "P01", "layout": file_layout_dict_p01, "sub_fill": p01_sub_fill, "fill_a": p01_row_fill_a, "fill_b": p01_row_fill_b, "entry_key": "P01_entries"}
     ]
     
-    # ----------------------------------------------------
-    # STEP 1: BUILD HORIZONTAL HEADERS (ROWS 1 & 2)
-    # ----------------------------------------------------
     current_col = 1
-    
     for segment in segments_config:
         fields = list(segment["layout"].keys())
         num_fields = len(fields)
-        
         if num_fields == 0:
             continue
             
@@ -197,14 +189,10 @@ def export_to_excel(products, filename):
     ws.row_dimensions[1].height = 30
     ws.row_dimensions[2].height = 26
     
-    # ----------------------------------------------------
-    # STEP 2: WRITE DATA ROWS
-    # ----------------------------------------------------
     for idx, product in enumerate(products):
         current_row = idx + 3
         prod_key = list(product.keys())[0]
         data_map = product[prod_key]
-        
         is_zebra_row = (idx % 2 == 0)
         segment_col_start = 1
         
@@ -212,7 +200,6 @@ def export_to_excel(products, filename):
             fields = list(segment["layout"].keys())
             if not fields:
                 continue
-                
             current_fill = segment["fill_b"] if is_zebra_row else segment["fill_a"]
             
             for field_idx, field_key in enumerate(fields):
@@ -233,7 +220,6 @@ def export_to_excel(products, filename):
                     cell.alignment = Alignment(horizontal="left", vertical="center")
                     
             segment_col_start += len(fields)
-            
         ws.row_dimensions[current_row].height = 20
 
     ws.freeze_panes = "A3" 
@@ -257,14 +243,14 @@ class BK1ConverterApp:
     def __init__(self, root):
         self.root = root
         self.root.title("BK1 Flat-File Parser")
-        self.root.geometry("500x280")
+        self.root.geometry("500x360") 
         self.root.resizable(False, False)
         
         self.bg_base = "#1F232A"
         self.bg_surface = "#2D3139"
         self.text_primary = "#E2E8F0"
         self.text_secondary = "#8E8E93" 
-        self.ios_blue = "#0A84FF"       
+        self.ios_blue = "#0A84FF"      
         self.ios_green = "#30D158"      
         self.ios_red = "#FF453A"        
         
@@ -296,51 +282,70 @@ class BK1ConverterApp:
             font=(self.font_family, 10, "bold"),
             borderwidth=1,
             bordercolor=self.ios_blue,
-            lightcolor=self.ios_blue,
-            darkcolor=self.ios_blue,
-            focuscolor=self.bg_surface,
             padding=(10, 4)
         )
         self.style.map(
             "IOS.TButton", 
             background=[("active", "#3A3F4B")],
-            foreground=[("active", "#64B5FF")],
-            bordercolor=[("active", "#64B5FF")],
-            lightcolor=[("active", "#64B5FF")],
-            darkcolor=[("active", "#64B5FF")]
+            foreground=[("active", "#64B5FF")]
         )
-        
-        self.style.layout("IOS.TButton", [
-            ('Button.border', {'sticky': 'nswe', 'children': [
-                ('Button.focus', {'sticky': 'nswe', 'children': [
-                    ('Button.padding', {'sticky': 'nswe', 'children': [
-                        ('Button.label', {'sticky': 'nswe'})
-                    ]})
-                ]})
-            ]})
-        ])
         
         main_frame = ttk.Frame(root, padding="24")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         title_lbl = ttk.Label(main_frame, text="TGS POS File Layout Converter", font=(self.font_family, 16, "bold"))
-        title_lbl.pack(pady=(0, 20), anchor="w")
+        title_lbl.pack(pady=(0, 15), anchor="w")
 
-        file_frame = ttk.Frame(main_frame, style="Surface.TFrame", padding="12")
-        file_frame.pack(fill=tk.X, pady=5)
-        
-        self.file_label = ttk.Label(
-            file_frame, 
-            text="No .bk file loaded.", 
-            font=(self.font_family, 10), 
-            wraplength=300, 
-            style="Surface.TLabel"
+        # ----------------------------------------------------
+        # VISUAL DROP ZONE BOX WITH OUTLINE
+        # ----------------------------------------------------
+        self.drop_canvas = tk.Canvas(
+            main_frame, 
+            bg=self.bg_surface, 
+            highlightthickness=0, 
+            height=130
         )
-        self.file_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.drop_canvas.pack(fill=tk.X, pady=5)
         
-        self.upload_btn = ttk.Button(file_frame, text="Browse...", style="IOS.TButton", command=self.load_file)
-        self.upload_btn.pack(side=tk.RIGHT, padx=5)
+        # Draw dotted target outline inside the box area
+        self.drop_canvas.create_rectangle(
+            4, 4, 448, 126, 
+            outline="#48484A", 
+            dash=(4, 4), 
+            width=2
+        )
+        
+        # Primary prompt string inside the box area
+        self.file_label = tk.Label(
+            self.drop_canvas, 
+            text="Drag & Drop .bk File Here", 
+            font=(self.font_family, 11, "bold"), 
+            bg=self.bg_surface,
+            fg=self.text_primary,
+            justify="center"
+        )
+        self.drop_canvas.create_window(226, 32, window=self.file_label, anchor="center")
+        
+        # Subtle alternative fallback text inside the box area
+        self.or_lbl = tk.Label(
+            self.drop_canvas, 
+            text="— or —", 
+            font=(self.font_family, 9), 
+            bg=self.bg_surface,
+            fg=self.text_secondary
+        )
+        self.drop_canvas.create_window(226, 65, window=self.or_lbl, anchor="center")
 
+        # Browse fallback button layered inside the container
+        self.upload_btn = ttk.Button(
+            self.drop_canvas, 
+            text="Browse Files", 
+            style="IOS.TButton", 
+            command=self.load_file
+        )
+        self.drop_canvas.create_window(226, 98, window=self.upload_btn, anchor="center")
+
+        # Status field below the visual drop box
         self.status_lbl = ttk.Label(
             main_frame, 
             text="Waiting for .bk file...", 
@@ -349,7 +354,7 @@ class BK1ConverterApp:
             wraplength=440,
             justify="center"
         )
-        self.status_lbl.pack(pady=15, anchor="center")
+        self.status_lbl.pack(pady=12, anchor="center")
 
         self.save_btn = tk.Button(
             main_frame, 
@@ -365,17 +370,38 @@ class BK1ConverterApp:
             command=self.save_file,
             cursor="arrow"
         )
-        self.save_btn.pack(fill=tk.X, ipady=10, pady=(10, 0))
+        self.save_btn.pack(fill=tk.X, ipady=10, pady=(5, 0))
+
+        self.setup_drag_and_drop()
+
+    def setup_drag_and_drop(self):
+        try:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind('<<Drop>>', self.handle_dropped_file)
+            
+            self.drop_canvas.drop_target_register(DND_FILES)
+            self.drop_canvas.dnd_bind('<<Drop>>', self.handle_dropped_file)
+            
+            # Hover bindings (`<Enter>` / `<Leave>`) have been removed as requested
+        except NameError:
+            pass
+
+    def handle_dropped_file(self, event):
+        file_path = event.data
+        if file_path.startswith('{') and file_path.endswith('}'):
+            file_path = file_path[1:-1]
+        if file_path:
+            self.process_and_validate_file(file_path)
 
     def load_file(self):
         file_path = filedialog.askopenfilename(
             title="Select product catalog file",
             filetypes=[("BK files", "*.bk*"), ("All files", "*.*")]
         )
-        
-        if not file_path:
-            return
+        if file_path:
+            self.process_and_validate_file(file_path)
 
+    def process_and_validate_file(self, file_path):
         if not os.path.splitext(os.path.basename(file_path).lower())[1].startswith(".bk"):
             self.status_lbl.config(text="Uploaded file was not a .bk# file", foreground=self.ios_red)
             return
@@ -387,7 +413,7 @@ class BK1ConverterApp:
             self.parsed_data = parse_bk_file(file_path)
             self.loaded_filename = os.path.basename(file_path)
             
-            self.file_label.config(text=f"Loaded: {self.loaded_filename}")
+            self.file_label.config(text=f"Loaded: {self.loaded_filename}", fg=self.ios_green)
             self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} POS items.", foreground=self.ios_green) 
             
             self.save_btn.config(
@@ -440,6 +466,10 @@ class BK1ConverterApp:
             )
 
 if __name__ == "__main__":
-    window = tk.Tk()
+    try:
+        window = TkinterDnD.Tk()
+    except NameError:
+        window = tk.Tk()
+        
     app = BK1ConverterApp(window)
     window.mainloop()
