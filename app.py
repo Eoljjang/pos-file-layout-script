@@ -245,9 +245,10 @@ class BK1ConverterApp:
     def __init__(self, root):
         self.root = root
         self.root.title("BK1 Flat-File Parser")
-        self.root.geometry("540x550") 
+        self.root.geometry("540x600")  # Slightly expanded height for enhanced scrolling visibility
         self.root.resizable(True, True)
         
+        # Color Palette Settings
         self.bg_base = "#1F232A"
         self.bg_surface = "#2D3139"
         self.text_primary = "#E2E8F0"
@@ -258,6 +259,7 @@ class BK1ConverterApp:
         
         self.root.configure(bg=self.bg_base)
         
+        # Windows Dark Title Bar Hack
         try:
             from ctypes import windll, byref, c_int, sizeof
             HWND = windll.user32.GetParent(self.root.winfo_id())
@@ -268,10 +270,12 @@ class BK1ConverterApp:
         self.parsed_data = None
         self.loaded_filename = ""
         self.font_family = ("-apple-system", "SF Pro Text", "Helvetica Neue", "Segoe UI", "Arial")
+        self.uploaded_search_files = []
+        self.uploaded_search_workbooks = []
 
+        # Styles Config
         self.style = ttk.Style()
         self.style.theme_use('clam')
-        
         self.style.configure("TFrame", background=self.bg_base)
         self.style.configure("Surface.TFrame", background=self.bg_surface)
         self.style.configure("TLabel", background=self.bg_base, foreground=self.text_primary)
@@ -292,20 +296,15 @@ class BK1ConverterApp:
             foreground=[("active", "#64B5FF")]
         )
         
-        # --- FIXED SPLIT SCREEN CONTAINER LAYOUT ---
-        # Top Frame: Handles variable items (grows/scrolls organically)
-        self.top_scrollable_container = ttk.Frame(root, padding="20")
-        self.top_scrollable_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # Main Layout Frame
+        self.main_container = ttk.Frame(root, padding="20")
+        self.main_container.pack(fill=tk.BOTH, expand=True)
 
-        # Bottom Frame: Rigid control panel completely locked to the base
-        self.bottom_fixed_container = ttk.Frame(root, padding="20")
-        self.bottom_fixed_container.pack(side=tk.BOTTOM, fill=tk.X)
-
-        # Populate Top Frame Elements
-        title_lbl = ttk.Label(self.top_scrollable_container, text="TGS POS File Layout Converter", font=(self.font_family, 14, "bold"))
+        # 1. Main Headers & Drag/Drop
+        title_lbl = ttk.Label(self.main_container, text="TGS POS File Layout Converter", font=(self.font_family, 14, "bold"))
         title_lbl.pack(pady=(0, 10), anchor="w")
 
-        self.drop_canvas = tk.Canvas(self.top_scrollable_container, bg=self.bg_surface, highlightthickness=0, height=100)
+        self.drop_canvas = tk.Canvas(self.main_container, bg=self.bg_surface, highlightthickness=0, height=100)
         self.drop_canvas.pack(fill=tk.X, pady=5)
         self.drop_canvas.create_rectangle(4, 4, 494, 96, outline="#48484A", dash=(4, 4), width=2)
         
@@ -313,9 +312,7 @@ class BK1ConverterApp:
             self.drop_canvas, 
             text="Drag & Drop .bk File Here", 
             font=(self.font_family, 10, "bold"), 
-            bg=self.bg_surface,
-            fg=self.text_primary,
-            justify="center"
+            bg=self.bg_surface, fg=self.text_primary, justify="center"
         )
         self.drop_canvas.create_window(250, 25, window=self.file_label, anchor="center")
         
@@ -326,77 +323,60 @@ class BK1ConverterApp:
         self.drop_canvas.create_window(250, 75, window=self.upload_btn, anchor="center")
 
         self.status_lbl = ttk.Label(
-            self.top_scrollable_container, 
-            text="Waiting for .bk file...", 
-            font=(self.font_family, 10), 
-            foreground=self.text_secondary,
-            wraplength=440,
-            justify="center"
+            self.main_container, text="Waiting for .bk file...", font=(self.font_family, 10), 
+            foreground=self.text_secondary, wraplength=440, justify="center"
         )
         self.status_lbl.pack(pady=5, anchor="center")
 
         self.save_btn = tk.Button(
-            self.top_scrollable_container, 
-            text="Export to Excel", 
-            font=(self.font_family, 10, "bold"),
+            self.main_container, text="Export to Excel", font=(self.font_family, 10, "bold"),
             bg="#2C2C2E", fg="#48484A", state=tk.DISABLED, relief="flat",
             borderwidth=0, highlightthickness=0, bd=0, command=self.save_file, cursor="arrow"
         )
         self.save_btn.pack(fill=tk.X, ipady=6, pady=2)
         
+        # 2. File Upload Targets Hook
         self.upload_files_to_search_btn = tk.Button(
-            self.top_scrollable_container,
-            text="Upload excel POS files to search",
-            font=(self.font_family, 10, "bold"),
+            self.main_container, text="Upload Converted BK# Excel Files for Search", font=(self.font_family, 10, "bold"),
             bg="#9BFF97", fg="#111111", relief="flat",
             borderwidth=0, highlightthickness=0, bd=0, command=self.upload_files_to_search, cursor="arrow"
         )
-        self.upload_files_to_search_btn.pack(fill=tk.X, ipady=6, pady=2)
-
-        # Added a scrollable frame for uploaded file lists so they never overflow down over the search components
-        list_scroll_frame = ttk.Frame(self.top_scrollable_container)
-        list_scroll_frame.pack(fill=tk.BOTH, expand=True, pady=4)
-
-        self.search_files_lbl = ttk.Label(
-            list_scroll_frame,
-            text="",
-            font=(self.font_family, 9),
-            foreground=self.text_secondary,
-            wraplength=460,
-            justify="left"
-        )
-        self.search_files_lbl.pack(fill=tk.BOTH, expand=True, anchor="w")
-
-        # Populate Bottom Fixed Frame Elements (Locked in Position)
-        self.search_controls_frame = ttk.Frame(self.bottom_fixed_container)
+        self.upload_files_to_search_btn.pack(fill=tk.X, ipady=6, pady=4)
+        
+        # 3. Search Bar and Search Action Button Controls (Directly below Upload)
+        # 3. Search Bar and Search Action Button Controls (Directly below Upload)
+        self.search_controls_frame = ttk.Frame(self.main_container)
+        self.search_controls_frame.pack(fill=tk.X, pady=(4, 8)) # Standardized bottom padding
+        
         self.search_entry = tk.Entry(
-            self.search_controls_frame,
-            font=(self.font_family, 12),  # Expanded text readability size
-            relief="solid", bd=1, bg=self.bg_surface, fg=self.text_primary, insertbackground="white"
+            self.search_controls_frame, font=(self.font_family, 12), relief="solid", bd=1, 
+            bg=self.bg_surface, fg=self.text_primary, insertbackground="white"
         )
-        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6, ipadx=6)
-
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5, ipadx=6)
+        
         self.search_btn = tk.Button(
-            self.search_controls_frame,
-            text="Search",
-            font=(self.font_family, 10, "bold"),
-            bg="#9BFF97", fg="#111111", relief="flat",
-            borderwidth=0, highlightthickness=0, bd=0,
+            self.search_controls_frame, text="Search", font=(self.font_family, 10, "bold"),
+            bg="#9BFF97", fg="#111111", relief="flat", borderwidth=0, highlightthickness=0, bd=0,
             state=tk.DISABLED, command=self.search_uploaded_files, cursor="arrow"
         )
-        self.search_btn.pack(side=tk.LEFT, padx=(6, 0), ipady=6, ipadx=12)
-        self.search_controls_frame.pack(fill=tk.X, pady=(0, 5))  # Always visible context structure
+        self.search_btn.pack(side=tk.LEFT, padx=(6, 0), ipady=5, ipadx=12)
 
-        self.result_text_area = tk.Text(
-            self.bottom_fixed_container,
-            font=(self.font_family, 9),
-            bg=self.bg_base, fg=self.text_secondary,
-            bd=0, highlightthickness=0, height=5, state=tk.DISABLED
+        # 4. Content Displays & Scroll Areas (Tightened & Dynamic Height expansion)
+        self.list_scroll_frame = ttk.Frame(self.main_container)
+        self.list_scroll_frame.pack(fill=tk.X, pady=2) 
+
+        self.search_files_lbl = ttk.Label(
+            self.list_scroll_frame, text="", font=(self.font_family, 9),
+            foreground=self.text_secondary, wraplength=460, justify="left"
         )
-        self.result_text_area.pack(fill=tk.X, pady=(5, 0))
+        self.search_files_lbl.pack(fill=tk.X, anchor="w")
 
-        self.uploaded_search_files = []
-        self.uploaded_search_workbooks = []
+        # Set expand=True and fill=tk.BOTH so it takes up all remaining window space at the bottom
+        self.result_text_area = tk.Text(
+            self.main_container, font=(self.font_family, 9), bg=self.bg_base, fg=self.text_secondary,
+            bd=0, highlightthickness=0, state=tk.DISABLED
+        )
+        self.result_text_area.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
         self.setup_drag_and_drop()
     
@@ -462,7 +442,6 @@ class BK1ConverterApp:
             error_msg = str(e)
             if "Permission denied" in error_msg:
                 error_msg = "Permission Denied. Close the file if it's open in Excel and retry."
-            
             self.status_lbl.config(text=f"Export failed: {error_msg}", foreground=self.ios_red)
 
     def upload_files_to_search(self):
@@ -471,10 +450,9 @@ class BK1ConverterApp:
             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
         )
         if file_paths:
-            # 1. IMMEDIATE LOADING FEEDBACK UPDATES
             self.search_files_lbl.config(text="⏳ Uploading please wait...", foreground=self.ios_blue)
             self.search_btn.config(state=tk.DISABLED)
-            self.root.update()  # Forces Tkinter to redraw the UI immediately
+            self.root.update()
 
             self.uploaded_search_files = list(file_paths)
             self.uploaded_search_workbooks = []
@@ -492,7 +470,6 @@ class BK1ConverterApp:
                 except Exception:
                     failed_files.append(os.path.basename(path))
 
-            # 2. RESTORE STATUS DISPLAYS ONCE COMPLETE
             if success_files:
                 loaded_text = "🎯 Uploaded Target Files:\n" + "\n".join([f" • {f}" for f in success_files])
                 self.search_files_lbl.config(text=loaded_text, foreground=self.text_primary)
@@ -509,7 +486,7 @@ class BK1ConverterApp:
             if failed_files:
                 messagebox.showwarning(
                     "Load Error",
-                    f"Could not load the following Excel files:\n" + "\n".join(failed_files)
+                    "Could not load the following Excel files:\n" + "\n".join(failed_files)
                 )
 
     def search_uploaded_files(self):
@@ -523,10 +500,9 @@ class BK1ConverterApp:
             self.result_text_area.config(state=tk.DISABLED, fg=self.ios_red)
             return
 
-        # 1. IMMEDIATE SEARCHING FEEDBACK UPDATES
         self.result_text_area.insert(tk.END, "🔍 Searching please wait...")
         self.result_text_area.config(fg=self.ios_blue)
-        self.root.update()  # Forces Tkinter to redraw text block before iterating files
+        self.root.update()
 
         matches = []
         
@@ -536,9 +512,13 @@ class BK1ConverterApp:
             file_matches = []
             
             for sheet_name in workbook.sheetnames:
+                if file_has_matches:
+                    break
                 sheet = workbook[sheet_name]
                 
                 for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                    if file_has_matches:
+                        break
                     for cell_value in row:
                         if cell_value is None:
                             continue
@@ -546,13 +526,12 @@ class BK1ConverterApp:
                         if str(cell_value).strip() == query:
                             file_matches.append(f"   ↳ Row {row_idx} (Sheet: {sheet_name})")
                             file_has_matches = True
+                            break # Exits the columns loop immediately upon discovery
                             
-            # If this specific file had hits, add its header and its corresponding rows
             if file_has_matches:
                 matches.append(f"📁 {filename}:")
                 matches.extend(file_matches)
 
-        # 2. CLEAR SEARCH STATUS AND SHOW RESULTS
         self.result_text_area.delete("1.0", tk.END)
 
         if matches:
@@ -562,6 +541,7 @@ class BK1ConverterApp:
         else:
             self.result_text_area.insert(tk.END, f"❌ Exact value '{query}' not found anywhere in selected matrices.")
             self.result_text_area.config(state=tk.DISABLED, fg=self.ios_red)
+
     def setup_drag_and_drop(self):
         try:
             self.root.drop_target_register(DND_FILES)
@@ -578,7 +558,6 @@ class BK1ConverterApp:
             file_path = file_path[1:-1]
         if file_path:
             self.process_and_validate_file(file_path)
-
 
 if __name__ == "__main__":
     try:
