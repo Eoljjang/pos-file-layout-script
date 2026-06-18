@@ -1,40 +1,41 @@
 import os
 import json
+import sys
+import warnings
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import sys
 
-# Tkinter modules for the UI
+# Tkinter UI Framework Components
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-# Third-party module for native drag and drop capabilities
+# Optional Drag-and-Drop Hook Integration
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
 except ImportError:
     pass
 
 # ----------------------------------------------------
-# GLOBAL EXPLICIT VARIABLES INITIALIZATION
+# SYSTEM & RESOURCE PATH RESOLUTION
 # ----------------------------------------------------
-file_layout_dict_b01 = {}
-file_layout_dict_b02 = {}
-file_layout_dict_p01 = {}
-
-# ==========================================
-# CONFIGURATION LOADER ENGINE
-# ==========================================
 def get_resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """
+    Resolves the absolute path to resources. 
+    Guarantees local operations work identically when packed via PyInstaller.
+    """
     try:
         base_path = sys._MEIPASS
     except AttributeError:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+
+# ----------------------------------------------------
+# CONFIGURATION SCHEMA LOADING ENGINE
+# ----------------------------------------------------
 def load_layout_configs():
-    """Loads parsing schemas from local external JSON configs."""
+    """Loads target parsing specifications from external JSON config files."""
     configs = {}
     files = {
         "B01": "configs/b01_config.json",
@@ -54,21 +55,29 @@ def load_layout_configs():
             
     return configs["B01"], configs["B02"], configs["P01"]
 
+
+# Initialize layouts globally
+file_layout_dict_b01 = {}
+file_layout_dict_b02 = {}
+file_layout_dict_p01 = {}
+
 try:
     file_layout_dict_b01, file_layout_dict_b02, file_layout_dict_p01 = load_layout_configs()
 except Exception as err:
     root_err = tk.Tk()
     root_err.withdraw()
     messagebox.showerror("Initialization Error", str(err))
-    exit(1)
+    sys.exit(1)
 
 
-# ==========================================
-# PARSING ENGINE LOGIC
-# ==========================================
+# ----------------------------------------------------
+# CORE PARSING LOGIC ENGINE
+# ----------------------------------------------------
 def retrieve_specific_entry(line, layout_dict, entry_name):
+    """Extracts, cleans, and casts data from flat-files based on layout schemas."""
     if entry_name not in layout_dict:
         raise ValueError(f"Entry name '{entry_name}' not found in layout dictionary.")
+    
     offset = layout_dict[entry_name]["offset"]
     length = layout_dict[entry_name]["length"]
     val = line[offset:offset + length].strip()
@@ -77,10 +86,14 @@ def retrieve_specific_entry(line, layout_dict, entry_name):
         return float(val) if '.' in val else int(val)
     return val
 
+
 def retrieve_all_entries(line, layout_dict):
+    """Iterates through layout dictionary keys to extract all data points."""
     return {entry_name: retrieve_specific_entry(line, layout_dict, entry_name) for entry_name in layout_dict}
 
+
 def parse_bk_file(filepath):
+    """Reads flat file line-by-line, matching records dynamically into matrix dict blocks."""
     products = []
     current_product = {}
     current_product_name = None
@@ -123,19 +136,23 @@ def parse_bk_file(filepath):
         
     return products
 
-# ==========================================
-# Export to Excel logic
-# ==========================================
+
+# ----------------------------------------------------
+# EXCEL EXPORT RENDERING ENGINE
+# ----------------------------------------------------
 def export_to_excel(products, filename):
+    """Transpiles product dict matrices to a meticulously formatted Excel Spreadsheet."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "TGP POS Translations"
     ws.views.sheetView[0].showGridLines = True
     
+    # Font Style Definitions
     font_section_header = Font(name="Segoe UI", size=12, bold=True, color="FFFFFF")
     font_sub_header = Font(name="Segoe UI", size=10, bold=True, color="333333")
     font_data = Font(name="Segoe UI", size=10, color="222222")
     
+    # Row Background Color Definitions
     navy_header_fill = PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid")
     b01_sub_fill = PatternFill(start_color="DCEEFF", end_color="DCEEFF", fill_type="solid")
     b01_row_fill_a = PatternFill(start_color="F2F8FF", end_color="F2F8FF", fill_type="solid")
@@ -149,6 +166,7 @@ def export_to_excel(products, filename):
     p01_row_fill_a = PatternFill(start_color="F6F3FA", end_color="F6F3FA", fill_type="solid") 
     p01_row_fill_b = PatternFill(start_color="EFEAF6", end_color="EFEAF6", fill_type="solid") 
 
+    # Borders Layout Configuration
     thin_border_side = Side(style='thin', color='D9D9D9')
     cell_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
     
@@ -158,6 +176,7 @@ def export_to_excel(products, filename):
         {"name": "P01", "layout": file_layout_dict_p01, "sub_fill": p01_sub_fill, "fill_a": p01_row_fill_a, "fill_b": p01_row_fill_b, "entry_key": "P01_entries"}
     ]
     
+    # 1. Structure Group Headers (Rows 1 and 2)
     current_col = 1
     for segment in segments_config:
         fields = list(segment["layout"].keys())
@@ -189,6 +208,7 @@ def export_to_excel(products, filename):
     ws.row_dimensions[1].height = 30
     ws.row_dimensions[2].height = 26
     
+    # 2. Append Extracted Item Datasets
     for idx, product in enumerate(products):
         current_row = idx + 3
         prod_key = list(product.keys())[0]
@@ -224,6 +244,7 @@ def export_to_excel(products, filename):
 
     ws.freeze_panes = "A3" 
     
+    # 3. Handle Auto-Width Formatting Rules
     for col in ws.columns:
         max_len = 0
         for cell in col:
@@ -235,17 +256,19 @@ def export_to_excel(products, filename):
         ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
         
     wb.save(filename)
-    
-# ==========================================
-# CORE UI WINDOW CLASS
-# ==========================================
+
+
+# ----------------------------------------------------
+# TKINTER WINDOW APP INTERFACE VIEW COMPONENT
+# ----------------------------------------------------
 class BK1ConverterApp:
     def __init__(self, root):
         self.root = root
         self.root.title("BK1 Flat-File Parser")
-        self.root.geometry("500x360") 
-        self.root.resizable(False, False)
+        self.root.geometry("540x600")
+        self.root.resizable(True, True)
         
+        # Color Blueprint Styles
         self.bg_base = "#1F232A"
         self.bg_surface = "#2D3139"
         self.text_primary = "#E2E8F0"
@@ -256,6 +279,7 @@ class BK1ConverterApp:
         
         self.root.configure(bg=self.bg_base)
         
+        # Windows Dark Title Bar Hack Context Integration
         try:
             from ctypes import windll, byref, c_int, sizeof
             HWND = windll.user32.GetParent(self.root.winfo_id())
@@ -263,13 +287,16 @@ class BK1ConverterApp:
         except Exception:
             pass
 
+        # Operational Declarations
         self.parsed_data = None
         self.loaded_filename = ""
         self.font_family = ("-apple-system", "SF Pro Text", "Helvetica Neue", "Segoe UI", "Arial")
+        self.uploaded_search_files = []
+        self.uploaded_search_workbooks = []
 
+        # Styles Initialization Engines
         self.style = ttk.Style()
         self.style.theme_use('clam')
-        
         self.style.configure("TFrame", background=self.bg_base)
         self.style.configure("Surface.TFrame", background=self.bg_surface)
         self.style.configure("TLabel", background=self.bg_base, foreground=self.text_primary)
@@ -290,110 +317,91 @@ class BK1ConverterApp:
             foreground=[("active", "#64B5FF")]
         )
         
-        main_frame = ttk.Frame(root, padding="24")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Container Grid Layout Setup
+        self.main_container = ttk.Frame(root, padding="20")
+        self.main_container.pack(fill=tk.BOTH, expand=True)
 
-        title_lbl = ttk.Label(main_frame, text="TGS POS File Layout Converter", font=(self.font_family, 16, "bold"))
-        title_lbl.pack(pady=(0, 15), anchor="w")
+        # Component Segment 1: Header Titles & Main Canvas Target
+        title_lbl = ttk.Label(self.main_container, text="TGS POS File Layout Converter", font=(self.font_family, 14, "bold"))
+        title_lbl.pack(pady=(0, 10), anchor="w")
 
-        # ----------------------------------------------------
-        # VISUAL DROP ZONE BOX WITH OUTLINE
-        # ----------------------------------------------------
-        self.drop_canvas = tk.Canvas(
-            main_frame, 
-            bg=self.bg_surface, 
-            highlightthickness=0, 
-            height=130
-        )
+        self.drop_canvas = tk.Canvas(self.main_container, bg=self.bg_surface, highlightthickness=0, height=100)
         self.drop_canvas.pack(fill=tk.X, pady=5)
+        self.drop_canvas.create_rectangle(4, 4, 494, 96, outline="#48484A", dash=(4, 4), width=2)
         
-        # Draw dotted target outline inside the box area
-        self.drop_canvas.create_rectangle(
-            4, 4, 448, 126, 
-            outline="#48484A", 
-            dash=(4, 4), 
-            width=2
-        )
-        
-        # Primary prompt string inside the box area
         self.file_label = tk.Label(
-            self.drop_canvas, 
-            text="Drag & Drop .bk File Here", 
-            font=(self.font_family, 11, "bold"), 
-            bg=self.bg_surface,
-            fg=self.text_primary,
-            justify="center"
+            self.drop_canvas, text="Drag & Drop .bk File Here", font=(self.font_family, 10, "bold"), 
+            bg=self.bg_surface, fg=self.text_primary, justify="center"
         )
-        self.drop_canvas.create_window(226, 32, window=self.file_label, anchor="center")
+        self.drop_canvas.create_window(250, 25, window=self.file_label, anchor="center")
         
-        # Subtle alternative fallback text inside the box area
-        self.or_lbl = tk.Label(
-            self.drop_canvas, 
-            text="— or —", 
-            font=(self.font_family, 9), 
-            bg=self.bg_surface,
-            fg=self.text_secondary
-        )
-        self.drop_canvas.create_window(226, 65, window=self.or_lbl, anchor="center")
+        self.or_lbl = tk.Label(self.drop_canvas, text="— or —", font=(self.font_family, 9), bg=self.bg_surface, fg=self.text_secondary)
+        self.drop_canvas.create_window(250, 50, window=self.or_lbl, anchor="center")
 
-        # Browse fallback button layered inside the container
-        self.upload_btn = ttk.Button(
-            self.drop_canvas, 
-            text="Browse Files", 
-            style="IOS.TButton", 
-            command=self.load_file
-        )
-        self.drop_canvas.create_window(226, 98, window=self.upload_btn, anchor="center")
+        self.upload_btn = ttk.Button(self.drop_canvas, text="Browse Files", style="IOS.TButton", command=self.load_file)
+        self.drop_canvas.create_window(250, 75, window=self.upload_btn, anchor="center")
 
-        # Status field below the visual drop box
         self.status_lbl = ttk.Label(
-            main_frame, 
-            text="Waiting for .bk file...", 
-            font=(self.font_family, 10), 
-            foreground=self.text_secondary,
-            wraplength=440,
-            justify="center"
+            self.main_container, text="Waiting for .bk file...", font=(self.font_family, 10), 
+            foreground=self.text_secondary, wraplength=440, justify="center"
         )
-        self.status_lbl.pack(pady=12, anchor="center")
+        self.status_lbl.pack(pady=5, anchor="center")
 
         self.save_btn = tk.Button(
-            main_frame, 
-            text="Export to Excel", 
-            font=(self.font_family, 11, "bold"),
-            bg="#2C2C2E", 
-            fg="#48484A", 
-            state=tk.DISABLED, 
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-            bd=0,
-            command=self.save_file,
-            cursor="arrow"
+            self.main_container, text="Export to Excel", font=(self.font_family, 10, "bold"),
+            bg="#2C2C2E", fg="#48484A", state=tk.DISABLED, relief="flat",
+            borderwidth=0, highlightthickness=0, bd=0, command=self.save_file, cursor="arrow"
         )
-        self.save_btn.pack(fill=tk.X, ipady=10, pady=(5, 0))
+        self.save_btn.pack(fill=tk.X, ipady=6, pady=2)
+        
+        # Component Segment 2: Verify Target Selector Trigger
+        self.upload_files_to_search_btn = tk.Button(
+            self.main_container, text="Upload Converted BK# Excel Files for Search", font=(self.font_family, 10, "bold"),
+            bg="#9BFF97", fg="#111111", relief="flat",
+            borderwidth=0, highlightthickness=0, bd=0, command=self.upload_files_to_search, cursor="arrow"
+        )
+        self.upload_files_to_search_btn.pack(fill=tk.X, ipady=6, pady=4)
+        
+        # Component Segment 3: Search Management Panel Context
+        self.search_controls_frame = ttk.Frame(self.main_container)
+        self.search_controls_frame.pack(fill=tk.X, pady=(4, 8))
+        
+        self.search_entry = tk.Entry(
+            self.search_controls_frame, font=(self.font_family, 12), relief="solid", bd=1, 
+            bg=self.bg_surface, fg=self.text_primary, insertbackground="white"
+        )
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5, ipadx=6)
+        
+        self.search_btn = tk.Button(
+            self.search_controls_frame, text="Search", font=(self.font_family, 10, "bold"),
+            bg="#9BFF97", fg="#111111", relief="flat", borderwidth=0, highlightthickness=0, bd=0,
+            state=tk.DISABLED, command=self.search_uploaded_files, cursor="arrow"
+        )
+        self.search_btn.pack(side=tk.LEFT, padx=(6, 0), ipady=5, ipadx=12)
+
+        # Component Segment 4: Results Rendering Context Panels
+        self.list_scroll_frame = ttk.Frame(self.main_container)
+        self.list_scroll_frame.pack(fill=tk.X, pady=2) 
+
+        self.search_files_lbl = ttk.Label(
+            self.list_scroll_frame, text="", font=(self.font_family, 9),
+            foreground=self.text_secondary, wraplength=460, justify="left"
+        )
+        self.search_files_lbl.pack(fill=tk.X, anchor="w")
+
+        self.result_text_area = tk.Text(
+            self.main_container, font=(self.font_family, 9), bg=self.bg_base, fg=self.text_secondary,
+            bd=0, highlightthickness=0, state=tk.DISABLED
+        )
+        self.result_text_area.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
         self.setup_drag_and_drop()
-
-    def setup_drag_and_drop(self):
-        try:
-            self.root.drop_target_register(DND_FILES)
-            self.root.dnd_bind('<<Drop>>', self.handle_dropped_file)
-            
-            self.drop_canvas.drop_target_register(DND_FILES)
-            self.drop_canvas.dnd_bind('<<Drop>>', self.handle_dropped_file)
-            
-            # Hover bindings (`<Enter>` / `<Leave>`) have been removed as requested
-        except NameError:
-            pass
-
-    def handle_dropped_file(self, event):
-        file_path = event.data
-        if file_path.startswith('{') and file_path.endswith('}'):
-            file_path = file_path[1:-1]
-        if file_path:
-            self.process_and_validate_file(file_path)
-
+    
+    # ----------------------------------------------------
+    # RUNTIME VIEW EVENT ACTIONS
+    # ----------------------------------------------------
     def load_file(self):
+        """Launches directory browse panel tracking standard flat target file types."""
         file_path = filedialog.askopenfilename(
             title="Select product catalog file",
             filetypes=[("BK files", "*.bk*"), ("All files", "*.*")]
@@ -402,6 +410,7 @@ class BK1ConverterApp:
             self.process_and_validate_file(file_path)
 
     def process_and_validate_file(self, file_path):
+        """Directs reading engine workflow pipelines on valid target flat files."""
         if not os.path.splitext(os.path.basename(file_path).lower())[1].startswith(".bk"):
             self.status_lbl.config(text="Uploaded file was not a .bk# file", foreground=self.ios_red)
             return
@@ -417,17 +426,14 @@ class BK1ConverterApp:
             self.status_lbl.config(text=f"Success! Found {len(self.parsed_data)} POS items.", foreground=self.ios_green) 
             
             self.save_btn.config(
-                state=tk.NORMAL, 
-                bg=self.ios_blue, 
-                fg="white", 
-                activebackground="#0070E6", 
-                activeforeground="white",
-                cursor="hand2"
+                state=tk.NORMAL, bg=self.ios_blue, fg="white", 
+                activebackground="#0070E6", activeforeground="white", cursor="hand2"
             )
         except Exception as e:
             self.status_lbl.config(text=f"Parsing failure: {str(e)}", foreground=self.ios_red) 
 
     def save_file(self):
+        """Exports data object sets to structured workbook spreadsheets or raw structural JSON documents."""
         if not self.parsed_data:
             return
         
@@ -459,12 +465,131 @@ class BK1ConverterApp:
             error_msg = str(e)
             if "Permission denied" in error_msg:
                 error_msg = "Permission Denied. Close the file if it's open in Excel and retry."
-            
-            self.status_lbl.config(
-                text=f"Export failed: {error_msg}", 
-                foreground=self.ios_red
-            )
+            self.status_lbl.config(text=f"Export failed: {error_msg}", foreground=self.ios_red)
 
+    def upload_files_to_search(self):
+        """Loads matrix worksheets to cache memory objects, readying validation execution routines."""
+        file_paths = filedialog.askopenfilenames(
+            title="Select Excel POS files to search",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        if file_paths:
+            self.search_files_lbl.config(text="⏳ Uploading please wait...", foreground=self.ios_blue)
+            self.search_btn.config(state=tk.DISABLED)
+            self.root.update()
+
+            self.uploaded_search_files = list(file_paths)
+            self.uploaded_search_workbooks = []
+            success_files = []
+            failed_files = []
+
+            for path in self.uploaded_search_files:
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+                        wb = openpyxl.load_workbook(path, data_only=True)
+                    
+                    self.uploaded_search_workbooks.append((path, wb))
+                    success_files.append(os.path.basename(path))
+                except Exception:
+                    failed_files.append(os.path.basename(path))
+
+            if success_files:
+                loaded_text = "🎯 Uploaded Target Files:\n" + "\n".join([f" • {f}" for f in success_files])
+                self.search_files_lbl.config(text=loaded_text, foreground=self.text_primary)
+                self.search_btn.config(state=tk.NORMAL)
+                
+                self.result_text_area.config(state=tk.NORMAL)
+                self.result_text_area.delete("1.0", tk.END)
+                self.result_text_area.insert(tk.END, "Enter a value to search the uploaded files for exact matches.")
+                self.result_text_area.config(state=tk.DISABLED, fg=self.text_secondary)
+                
+                self.search_entry.delete(0, tk.END)
+                self.search_entry.focus_set()
+
+            if failed_files:
+                messagebox.showwarning(
+                    "Load Error",
+                    "Could not load the following Excel files:\n" + "\n".join(failed_files)
+                )
+
+    def search_uploaded_files(self):
+        """Scans loaded cached worksheet row cells looking for strict key index target values."""
+        query = self.search_entry.get().strip()
+        
+        self.result_text_area.config(state=tk.NORMAL)
+        self.result_text_area.delete("1.0", tk.END)
+        
+        if not query:
+            self.result_text_area.insert(tk.END, "⚠️ Please type a target verification value.")
+            self.result_text_area.config(state=tk.DISABLED, fg=self.ios_red)
+            return
+
+        self.result_text_area.insert(tk.END, "🔍 Searching please wait...")
+        self.result_text_area.config(fg=self.ios_blue)
+        self.root.update()
+
+        matches = []
+        
+        for path, workbook in self.uploaded_search_workbooks:
+            filename = os.path.basename(path)
+            file_has_matches = False
+            file_matches = []
+            
+            for sheet_name in workbook.sheetnames:
+                if file_has_matches:
+                    break
+                sheet = workbook[sheet_name]
+                
+                for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                    if file_has_matches:
+                        break
+                    for cell_value in row:
+                        if cell_value is None:
+                            continue
+                        
+                        if str(cell_value).strip() == query:
+                            file_matches.append(f"   ↳ Row {row_idx} (Sheet: {sheet_name})")
+                            file_has_matches = True
+                            break
+                            
+            if file_has_matches:
+                matches.append(f"📁 {filename}:")
+                matches.extend(file_matches)
+
+        self.result_text_area.delete("1.0", tk.END)
+
+        if matches:
+            output_report = "✅ Matches Discovered:\n" + "\n".join(matches)
+            self.result_text_area.insert(tk.END, output_report)
+            self.result_text_area.config(state=tk.DISABLED, fg=self.ios_green)
+        else:
+            self.result_text_area.insert(tk.END, f"❌ Exact value '{query}' not found anywhere in selected matrices.")
+            self.result_text_area.config(state=tk.DISABLED, fg=self.ios_red)
+
+    def setup_drag_and_drop(self):
+        """Safely hooks native DnD libraries to interface canvases if system extensions are available."""
+        try:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind('<<Drop>>', self.handle_dropped_file)
+            
+            self.drop_canvas.drop_target_register(DND_FILES)
+            self.drop_canvas.dnd_bind('<<Drop>>', self.handle_dropped_file)
+        except NameError:
+            pass
+
+    def handle_dropped_file(self, event):
+        """Sanitizes incoming dragged drop workspace path data payloads safely."""
+        file_path = event.data
+        if file_path.startswith('{') and file_path.endswith('}'):
+            file_path = file_path[1:-1]
+        if file_path:
+            self.process_and_validate_file(file_path)
+
+
+# ----------------------------------------------------
+# APPLICATION ENTRY EXECUTION POINT
+# ----------------------------------------------------
 if __name__ == "__main__":
     try:
         window = TkinterDnD.Tk()
