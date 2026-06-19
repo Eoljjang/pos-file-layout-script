@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import warnings
+import re
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -292,7 +293,6 @@ class BK1ConverterApp:
         self.loaded_filename = ""
         self.font_family = ("-apple-system", "SF Pro Text", "Helvetica Neue", "Segoe UI", "Arial")
         self.uploaded_search_files = []
-        self.uploaded_search_workbooks = []
 
         # Styles Initialization Engines
         self.style = ttk.Style()
@@ -356,7 +356,7 @@ class BK1ConverterApp:
         
         # Component Segment 2: Verify Target Selector Trigger
         self.upload_files_to_search_btn = tk.Button(
-            self.main_container, text="Upload Converted BK# Excel Files for Search", font=(self.font_family, 10, "bold"),
+            self.main_container, text="Upload Excel or .bk# Files for Search", font=(self.font_family, 10, "bold"),
             bg="#9BFF97", fg="#111111", relief="flat",
             borderwidth=0, highlightthickness=0, bd=0, command=self.upload_files_to_search, cursor="arrow"
         )
@@ -468,10 +468,10 @@ class BK1ConverterApp:
             self.status_lbl.config(text=f"Export failed: {error_msg}", foreground=self.ios_red)
 
     def upload_files_to_search(self):
-        """Loads matrix worksheets to cache memory objects, readying validation execution routines."""
+        """Loads target search filenames or tracks them directly into working memory."""
         file_paths = filedialog.askopenfilenames(
-            title="Select Excel POS files to search",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+            title="Select Excel or BK files to search",
+            filetypes=[("Supported Files", "*.xlsx;*.bk*"), ("Excel files", "*.xlsx"), ("BK files", "*.bk*"), ("All files", "*.*")]
         )
         if file_paths:
             self.search_files_lbl.config(text="⏳ Uploading please wait...", foreground=self.ios_blue)
@@ -479,20 +479,10 @@ class BK1ConverterApp:
             self.root.update()
 
             self.uploaded_search_files = list(file_paths)
-            self.uploaded_search_workbooks = []
             success_files = []
-            failed_files = []
 
             for path in self.uploaded_search_files:
-                try:
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
-                        wb = openpyxl.load_workbook(path, data_only=True)
-                    
-                    self.uploaded_search_workbooks.append((path, wb))
-                    success_files.append(os.path.basename(path))
-                except Exception:
-                    failed_files.append(os.path.basename(path))
+                success_files.append(os.path.basename(path))
 
             if success_files:
                 loaded_text = "🎯 Uploaded Target Files:\n" + "\n".join([f" • {f}" for f in success_files])
@@ -501,20 +491,14 @@ class BK1ConverterApp:
                 
                 self.result_text_area.config(state=tk.NORMAL)
                 self.result_text_area.delete("1.0", tk.END)
-                self.result_text_area.insert(tk.END, "Enter a value to search the uploaded files for exact matches.")
+                self.result_text_area.insert(tk.END, "Enter a value to search the uploaded files.")
                 self.result_text_area.config(state=tk.DISABLED, fg=self.text_secondary)
                 
                 self.search_entry.delete(0, tk.END)
                 self.search_entry.focus_set()
 
-            if failed_files:
-                messagebox.showwarning(
-                    "Load Error",
-                    "Could not load the following Excel files:\n" + "\n".join(failed_files)
-                )
-
     def search_uploaded_files(self):
-        """Scans loaded cached worksheet row cells looking for strict key index target values."""
+        """Scans loaded cached files (Excel row matrices or flat .bk text strings) for specific pattern strings."""
         query = self.search_entry.get().strip()
         
         self.result_text_area.config(state=tk.NORMAL)
@@ -530,43 +514,67 @@ class BK1ConverterApp:
         self.root.update()
 
         matches = []
+        files_with_matches_count = 0
+        total_files_count = len(self.uploaded_search_files)
         
-        for path, workbook in self.uploaded_search_workbooks:
+        for path in self.uploaded_search_files:
             filename = os.path.basename(path)
-            file_has_matches = False
+            file_extension = os.path.splitext(filename)[1].lower()
             file_matches = []
             
-            for sheet_name in workbook.sheetnames:
-                if file_has_matches:
-                    break
-                sheet = workbook[sheet_name]
-                
-                for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-                    if file_has_matches:
-                        break
-                    for cell_value in row:
-                        if cell_value is None:
-                            continue
-                        
-                        if str(cell_value).strip() == query:
-                            file_matches.append(f"   ↳ Row {row_idx} (Sheet: {sheet_name})")
-                            file_has_matches = True
+            # --- PATHWAY A: BK TEXT FILE PARSING SEARCH ---
+            if file_extension.startswith(".bk"):
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line_idx, line in enumerate(f, start=1):
+                            if query in line:
+                                start_char = line.find(query)
+                                file_matches.append(f"   ↳ Line {line_idx}, Char position {start_char}")
+                                break  # Stop scanning this .bk file after the first match
+                except Exception as e:
+                    file_matches.append(f"   ↳ ⚠️ Read error: {str(e)}")
+
+            # --- PATHWAY B: EXCEL FILE SEARCH ---
+            else:
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+                        workbook = openpyxl.load_workbook(path, data_only=True)
+                    
+                    excel_match_found = False
+                    for sheet_name in workbook.sheetnames:
+                        if excel_match_found:
                             break
+                        sheet = workbook[sheet_name]
+                        for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                            if excel_match_found:
+                                break
+                            for cell_value in row:
+                                if cell_value is None:
+                                    continue
+                                if str(cell_value).strip() == query:
+                                    file_matches.append(f"   ↳ Row {row_idx} (Sheet: {sheet_name})")
+                                    excel_match_found = True
+                                    break
+                except Exception as e:
+                    file_matches.append(f"   ↳ ⚠️ Read error: {str(e)}")
                             
-            if file_has_matches:
+            if file_matches:
+                files_with_matches_count += 1
                 matches.append(f"📁 {filename}:")
                 matches.extend(file_matches)
 
         self.result_text_area.delete("1.0", tk.END)
 
         if matches:
-            output_report = "✅ Matches Discovered:\n" + "\n".join(matches)
+            summary_header = f"✅ Matches were found in {files_with_matches_count}/{total_files_count} files\n\n"
+            output_report = summary_header + "\n".join(matches)
             self.result_text_area.insert(tk.END, output_report)
             self.result_text_area.config(state=tk.DISABLED, fg=self.ios_green)
         else:
-            self.result_text_area.insert(tk.END, f"❌ Exact value '{query}' not found anywhere in selected matrices.")
+            self.result_text_area.insert(tk.END, f"❌ Value '{query}' not found anywhere in the {total_files_count} selected targets.")
             self.result_text_area.config(state=tk.DISABLED, fg=self.ios_red)
-
+    
     def setup_drag_and_drop(self):
         """Safely hooks native DnD libraries to interface canvases if system extensions are available."""
         try:
